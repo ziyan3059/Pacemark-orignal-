@@ -1,0 +1,269 @@
+Project Analysis
+Introduction and Background to the Problem
+ 
+The reason I created this website is because of a problem I faced whilst revising for my gcses the reason I decided to create this website is because of a problem I faced in my in my revision umm for my GCSE exams which is the even though I understood most of the content the time pressure was the most overwhelming factor when it came to actual exams I realised that even though you can revise from notes and flash cards and you could understand the topic very well you would do very different in a time in timed conditions you realise that from revising notes from platforms like Seneca or BBC bite sites you might understand the topic very well however when it comes to timed conditions you start panicking or you can't do that well on certain topics due to the not due to not knowing the topic absolutely well I also realise you don't really focus on your time management skills when doing revision and this is a problem I think most students go through whilst revising for the umm exams it became very clear to me when once I started doing mock exams that I would do really well on topic based questions and quizzes but when it came to the action marks I was doing very poorly due to time management issues therefore I decided to try and make a solution to this problem and henceforth this project
+What is the problem I'm trying to solve?
+the core problem I think that most revision websites have is that they focus entirely on mostly on content delivery and so the things like topic explanations like quizzes and flash cards however they don't actually show you how to manage your time and how to perform in timed conditions on top of this even though most of these websites do allow you to access PDFs off the past papers they don't actually give you anything on how you did on the past papers how well you did on certain topics how long you took on certain topics and nor the timed conditions and you don't really know where you lost your timings umm how much you spent on specific questions and if you are lucky enough they might give you the mark scheme so you can mark it this is specifically a big problem for GCSE essay based subjects such as biology computer science re etcetera
+why is this needed the website is needed because it directly targets the gaps between the content knowledge and the time exam performance which is something that most of these revision platforms don't actually do I love umm students myself included don't actually do do Bad in the exams because of not knowing their content but rather because of not knowing how to manage their time in an actual exam by building this website umm I will uh it will allow students to do real past papers on the website itself whilst also tracking how long they take on each individual questions and then afterwards showing them where they were slow were they possibly panicked and this would give them a much more accurate and realistic ex uh feel for the exam this means that when they do this exam not only will they understand where they spend more time on a specific question will actually give them specific topics that they need to revise and this can be done with the actual revision websites that are currently present
+Research into Existing Solutions
+Before designing this website, I researched competitors and their strengths and weaknesses.
+Seneca learning-this website is the most popular revision platform I know it's good for breaking down specific topics and learning thoroughly that the key bits of the topic however it doesn't actually give you any timed conditions or how long you should spend on these topics is good for breaking down the topic into smaller chunks learning it in such a manner.
+BBC Bitesize - it's similar to Seneca in that it has content and small topic tests, but it also offers good explanation videos and quizzes that help you understand the question and answer in time.
+PMT- I really did gain some inspiration from this website as it's solely based on exam paper and past paper revision it also does contain specific topic related exam questions that you can focus on so if you have any gaps on specific exam topics you can focus just on them however a downside to this website is that it doesn't actually have any exam and timed conditions the these exam papers are just PDFs with the mock schemes already present on the side for you to look at after you've done the exam papers it also doesn't give you any feedback on your weaknesses and you just have to figure it out yourself
+From researching these three competitors, I realised that all of these platforms either focus on content, providing access to past papers, or give you explanation videos.
+Stakeholder Identification
+Before going for interviews, I thought I should actually identify who the actual stakeholders of this project might be and so I researched on who would actually be impacted by my website.
+Students (primary stakeholder) - these are the main users of the actual website, and they will be the ones using it and causing the traffic on the website.
+parents whilst these on the students and won't actually directly use this website on a daily basis they will be the ones that will be pushing the students to access this website and therefore my main struggle will be to make sure my website is friend friendly whilst also ensuring it does have enough UI to attract students therefore I need to make sure that this website looks trustworthy and shows progress in the students academic achievements
+Tutors/teachers - these are the people who will actually recommend this website to the parents and the students, as they have a more introspective perspective on these subjects and a deeper understanding of the students' academic achievements and progress.
+One of the key outlining features of this project is that it should actually help me when I'm revising for an exam 
+- The school/exam department (indirect stakeholder) – schools could potentially use a tool like this to help track how their students are performing under timed conditions across the year, although this isn’t the primary focus of my project it is a consideration for future development.
+
+Identifying these stakeholders early means I knew who to actually go and speak to when gathering feedback on this concept, rather than just assuming what others wanted without checking with the people who would actually be using it aswell as people who understand the exam process from a teaching side.
+
+Interviews and stakeholder feedback
+To make this website would actually be used and solve a problem. I spoke to multiple pupils and teachers asked their view regarding this website 
+regarding my interview questions asked around a few key areas I asked about their current habits regarding revision how they used past papers and what they faced umm in exams with timing and pressures around exam time management
+student 1: umm the student said that they often ran out of time in the exam uh on more difficult questions and the 9 markers and the six markers uh because they did spend too much time on their lower marking based questions they said that by rushing they did not give themselves enough time to think about the question and therefore lost a lot of mocks they said if something showed them how much time they took on each umm question would be really helpful and and allow them to attain better marks in a real exam so this students key umm askance was to make an website based on timing and how long you spend on each question
+student 2 this student mentioned that whenever they did the past papers umm they never did it in timed conditions and therefore umm didn't really know how much time they would be spending in a real exam they said that time pressure would make you more realistic and give them and attempted directly rather than downloading the PDF umm feel for what the exam would be like and so the student's problem was the same as the previous students
+student 3 this student raised a different point and uh that even though they manage their time properly they didn't know which specific questions they struggled on or which specific topics they needed to revise their requirement was that this website should contain features that allowed them to break down each question and what topics they were struggling on rather than just treating the paper as one
+student for the student asked for more on a practical side and asked that they wanted to practise umm past papers that aren't really available on normal websites and so that requirement was that this website should be able to generate new questions based on the topics as to revise they needed more questions as they had already done the previous questions 
+Analysis of the interview findings
+looking back I realised I saw some clear patterns that umm that were based on every person's feedback the first keep idea that people wanted an improvement on was time management issues and umm finding out the gaps in specific topics mainly the management of time was the main issue and so rather than bring building another quiz platform I realised I should make a website which was specifically focused on time management and breaking down each question which they got wrong and as to where they went wrong thirdly I realised that another key area where these websites didn't actually focus was creating new exam questions based on current specification demands this shaped a lot of my umm requirements umm which are listed below
+
+requirements
+functional requirements
+The website should allow the users to select a real osea paper and attempted directly on the website rather than downloading it the system should track the time each question takes
+it should highlight questions which the user spent more time on and based this should be based on how many marks the question is unflag it as their potential weakness
+the system should give the user a breakdown on their performance and show which topics they struggled on and which ones they spent the most amount of time
+the system should allow the user to umm send their own past papers into the programme and which can be done in changed into a past paper format and using a
+it should allow the user to track their progress and if see if the timing is improving
+should list weaknesses by topics and categories 
+non functional requirements
+the website should be simple easy to use so that the user user can focus on the past papers and not figuring how to use it it should also run quickly and smoothly so that it doesn't affect the time conditions that the student is using them in it should be reliable enough that at the time it doesn't glitch reset or lose the data it should be accessible on different devices for example phones laptops tablets etc
+data requirements
+for this to be umm used properly the website needs to take in some data from the user and store it this means the paper content itself uh the login information and details mark schemes
+hardware and software requirements
+since this is a website that's based on browsers I'm not a downloadable application the hardware requirements are very minimal as they are they only need computer with or device that can run a browser and have a stables in uh Internet connection
+computational methods
+this is how in used computational methods in my application
+thinking abstractly
+thinking abstractly really helped me compress my finddings and codes 
+it also help me reduce how long the code I wrote was I found that there were a lot of different problems coming up from my research and interviews some of these issues that came up were timing issues in the papers, no feedback after the paper etc 
+and instead of tring to deal with all of them separately I turned all of them into one core problem
+I also stopped focusing on smaller details like the button shades etc
+One of the other xxamples of abstraction were when I stopped looking at how the timer would look and focused on actually  adding a timer to application
+2 thinking ahead 
+Thinking ahead meant I was always trying to accommodate space in my application for other core features and so i==to tackle this I didn’t just ask the students for their opionions rather I asked about their problems and their alternatives 
+Potential challenges :
+Some problem I thought that the students might face were:
+Students might not find the past papers of their choice
+I am trying to add a feature which will allow clients to upload their own papers and convert it into my question bank type using the power of ai 
+Also added a feature which allows students to request papers of their own to be added to multitude of questions in the website
+3. thinking  logically
+Doing thinks logically and in a chronological order was reaaaly important to me 
+So my thought behind the features were based on student intervews rather than just my own thoughts, for example because multiple stakeholders seperately told me timing was there main issue rather then content, I logically concluded this had to be the main focus of my requirements rather then just going with my own opinion of the problem.
+Thinking concurrently 
+Completing tasks in a logical order 
+Based on the complexity of the problem eg. Of these are when I looked at the time function code  before buolfing the ai upload  feature since the ai features rely on the the timerand the question structure being there
+Decomposition
+I used Decomposition throughout the project because the revision platform is made up of multiple independent components, including user authentication, past paper selection, question timing, performance analysis and progress tracking. By breaking the problem into smaller modules, each section can be developed and tested independently before being integrated into the final system. This reduces complexity and makes maintenance easier as new features can be added without affecting the entire system.
+
+Legal ethical and social consideration
+Since this website was going to be storing sensitive data from the students like the time they take to do each question their weak topics etc I needed to consider data protection. There is also the fact about copyrighting my application and more importantly the copyright behind specific question bank which are behind paywalls 
+If I started allowing students to use my application to turn those questions into the format present in my website it would be illegal as they are not mine to look at or analyse
+Socially:
+I also wanted to make sure the website didn’t become an extra burden on the students which thay would have thought as an obligation rather than a tool I wanted to make sure it wasn’t too burdensome on the students
+Objectives
+The problem the research and the interviews are what summarise my problems and the projects key objectives ie. Allow real timed past papers identify time spent on each question. Identify specific topic weakneses besed on timing data allow for user or myself to add questions to the question bank.
+Success criteria 
+1. Allow a student to complete a real OCR GCSE Computer Science past paper directly on the website under timed conditions, without needing to download or print anything.
+2. Accurately track and display the time spent on each individual question, not just the overall time for the paper.
+3. Clearly identify and present to the user which questions or topics they are weakest on, based on time spent and where possible accuracy aswell.
+4. Allow new papers to be added to the website, either manually by me or by a student/tutor uploading there own paper which gets converted using AI.
+5. Allow users to track there performance and timing across multiple past papers over time, so improvement (or lack of) can be seen clearly.
+6. Categorise feedback by topic area so students know specifically what part of the specification to revise, not just which individual question they got wrong.
+7. Load and run smoothly with no timer glitches or data loss, so the exam simulation feels realistic and trustworthy.
+8. Be simple enough to use that a student can start a past paper within a few clicks, without a confusing interface getting in the way of there revision.
+9. Recieve positive feedback from the students and tutor I originally interviewed when they test the finished product, specifically confirming
+
+
+Conclusion 
+
+ Conclusion
+
+Overall my analysis confirms that the problem that I originally identified is that revision websites focus to much on content and not enough on realistic timed exam practice, this is backed up by both my research into existing platforms and the feedback I gathered directly from students and a tutor. Every stakeholder I spoke to all pointed towards the same underlying issue which is time management and exam technique being the bigger barrier then content knowledge alone, . Going forward these requirements will guide the design and development stages of this project, making sure that what I actually build reflects what stakeholders said they need, rather then just what I personally assumed would be useful 
+
+ 
+
+
+
+Design
+ Criterion 1: Decomposition & Hierarchy Chart
+ 
+
+```
+
+Module Breakdown & Justifications
+
+Module 1: User Authentication & Account System**
+Inputs: Username, Password and email.
+* Processing: Salt and hash password (e.g., via `bcrypt`), query user database table, validate session state.
+Outputs: Auth status token, session state, user role And error feedback if validation fails
+Justification: this is essential for secure storage ofthe students history and keeping each persons personal data separate eg. Their exam performance data
+
+
+Module 2: PDF Question Extraction & AI Parsing Engine**
+*Input:  Uploaded PDF file stream.
+Processing: check if right file format(Pdf) the Extract the raw text layout using `PyMuPDF` (`fitz`), then pass the text to AI structured parser to isolate the question boundaries, mark allocations, and question types into a structured JSON file .
+Outputs: Structured Question Object array (JSON).
+Justification: PDF extraction is required so students can complete papers dynamically online without printing them out. Manual conversion is not efficient and takes a long time , so using AI makes it faster to parse the question paper.
+
+
+Module 3: Exam Execution & Live Timing Engine
+Inputs: User interactive answers, question selection event, real-time timer ticks.
+Processing: Records how long spent on each question using an event listeners on question focus/blur(this occurs on the text field). It then evaluate user entries against stored mark scheme criteria.
+Outputs: time spent on each question, users submitted data, initial raw marks.
+Justification: my criteria specifically requires the time spent per-question  rather than total time spent on the whole paper to pinpoint revision pacing issues under simulated exam pressure.
+
+
+Module 4: Performance Analytics & Metric Engine
+Inputs: Historical question response logs, timing data from previous attempts/ideal time that should be spent on each question, topic category .
+Processing: Sort questions by priority score(based on ratio of time spent on the Q’s and how many marks they got), calculate topic weakness metrics, run progress percentage calculations(ie calculations required to create bar charts and time they spent compared to ideal time they should have spent)
+Outputs: Constructive analytics metrics, weak topic flags, visualization chart data(bar chart).
+Justification: Crucial to prevent exam stress by converting raw timer tracking into actionable, constructive feedback highlighting precise specification areas for improvement. And ie the main metric used by students to analyse their performance
+
+
+Module 5: Output & Report Generation Engine
+Inputs: the complete payload from module 3(student answer, time spent on the question marks acquired),the topic tag and data from  previous attempts or/and the ideal time spent and the answer.
+Processing: calculate percentage improvement based on previous attempts priority score sorting algorithm
+And creating the graphs(bar graphs and pie charts) and generating a pdf file to store these in
+Outputs: Downloadable report file which includes
+	Topic based feedback
+	Graphs
+	Pdf file ready to export
+Justification: Allows students and tutors to review performance history offline Aswell as share progress reports to others
+
+Criterion 2: Detailed Solution Structure
+Login & registration screen
+ 
+Main dashboard & paper selection
+ 
+Exam screen
+ 
+Feedback dashboard 
+Criterion 3: Key Algorithms & Pseudocode
+
+Algorithm 1: Per-Question Live Timing Engine
+
+```text
+ALGORITHM TrackQuestionTime(currentQuestionID, nextQuestionID)
+    	// Record elapsed time on current question focus loss
+currentTimeStamp = GET_SYSTEM_TIME_MILLISECONDS()
+    	elapsedSeconds = (currentTimeStamp - questionStartTime) / 1000
+    	// Accumulate total active time on current question
+ questionTimeMap[currentQuestionID] = questionTimeMap[currentQuestionID]+
+elapsedSeconds
+    	// Reset timer anchor for newly selected question
+    	activeQuestionID = nextQuestionID
+    	questionStartTime = GET_SYSTEM_TIME_MILLISECONDS()
+    
+UPDATE_UI_DISPLAY(currentQuestionID, questionTimeMap[currentQuestionID])
+ENDALGORITHM
+Inputs: CurrentQuestionId, NextQuestionId, questionstarttime and questionTimeMap
+Step by step execution
+1.	capture timestamp: functions call GET_SYSTEM_TIME_MILLISECONDS to record exact moment focus is lost on the question
+2.	delta calculations~: computes the time between the user coming back onto the question by subtracting the time from the time stamp at the start of focus being lost and the timestamp at the time when user clicks back onto the question
+3.	the time is then added to the total time for that specific question under the questiontimemap dictionary structure
+4.	the sctive question pointer is updated to nextQuestionID and questionStartTime is reset to the current time
+5.	finally update_UI_DISPLAY is called to visually reflect the updated tracking time on the ui
+Computational Justification: this algorithm Prevents extra time being added to the timing data due to switching between tabs by measuring active DOM focus state instead of running a global unanchored counter.
+
+ Algorithm 2: Priority Weakness Ranking Algorithm (Sorting & Filtering)
+
+ALGORITHM CalculateTopicWeakness(userResponses)
+    topicScores = DICTIONARY()
+    
+    FOR EACH response IN userResponses DO
+        	topic = response.topicCategory
+        	timeRatio = response.timeSpentSeconds / response.recommendedTimeSeconds
+        	scoreRatio = response.marksAwarded / response.totalMarks
+        
+        	// Priority formula: High time ratio combined with low accuracy flags weakness
+        	weaknessIndex = (timeRatio * 0.6) + ((1.0 - scoreRatio) * 0.4)
+        
+       	 IF topic NOT IN topicScores THEN
+       	     topicScores[topic] = LIST()
+       	 ENDIF
+       	 topicScores[topic].APPEND(weaknessIndex)
+    ENDFOR
+    
+    // Aggregate and sort using Insertion Sort by descending weakness score
+    summaryList = AGGREGATE_AVERAGES(topicScores)
+    SORT_DESCENDING_BY_WEAKNESS(summaryList)
+    
+    RETURN summaryList
+ENDALGORITHM
+Step by step execution
+1.	creates an empty dictionary structure called topicScores to group data by specific topics(mentioned previously as topic tags)
+2.	loops through every single response calculating the behavirioul ratio between time spent divided by time that should be spent ideally and marks gained divided by total achievable marks
+3.	calculated data is then added to the related topic list within the dictionary
+4.	weakness calculation: applies a weighted formula where time efficiency to score ratio is weighted 60%:40%
+5.	finally the algorithm then sorts the weakness per topic by an average of all the question for each topic and list the data based on the average weakness for each topic and list it in descending order
+
+
+Computational Justification: Combining time-spent data with score accuracy means students who answer correctly but take twice the allocated time are still flagged for time taken.
+
+Criterion 4: Usability & Accessibility Features
+ I used the Nielsen's LEMES Framework 
+| L - Learnability | E - Efficiency | M - Memorability | E - Errors | S - Satisfaction |
+
+Usability Specifications 
+
+1.Stress-Reducing Palette(Passive):  Site-wide layout. Cool blue/slate (#2C3E50), high contrast (7:1 ratio). This is for those with Visual Impairments / Cognitive Anxiety. Prevents visual fatigue and maintains a calm aesthetic during timed pressure. 
+2.Constructive Feedback Cards(Active): Results Dashboard. Centralized container, green/amber indicators. For those who require Cognitive Support / Neurodivergent Users. Frames performance constructively around specs to build confidence. 
+3.Minimalist Exam Workspace(Passive): Past Paper Interface. High padding, zero side banners/popups. For those who require support with Focus / ADHD.  Eliminates visual clutter so students focus purely on exam questions. 
+4.Subtle Progress Bar(Active): Header Bar. Horizontal 4px bar, smooth transition. To ensure students go through minimum Stress Time Monitoring.  Replaces flashing timers with non-intrusive visual progress cues. 
+5.Keyboard-First Navigation(Active): Exam Screen. Shortcuts (`Alt+N` Next, `Alt+P` Previous). For those with Motor Impairments / Power Users. Allows for seamless navigation without forcing trackpad reliance. |
+6.Scalable Text Control( Active):Main Control Bar. Adjustable font scaling (14px–24px). For those with Visual Impairments / Low Vision. Ensures text readability across varying screen resolutions. |
+7.Auto-Save Draft Engine(Active): Input Fields. Triggers every 5 seconds locally.to ensure  Error Prevention / Data Loss. This feature Protects student work against accidental browser refreshes or disconnects. 
+8.High-Contrast Mark Badges(Passive): Next to question text. Rounded pill boxes, bold typography. Clear Information Hierarchy. Instantly displays mark allocation so students budget time effectively. 
+9.Screen-Reader Labels(Passive): All interactive DOM nodes. Full `aria-label` tags. For those with  Visual Impairments / Screen Readers. This Ensures that accessibility tools parse input boxes and timer alerts cleanly. 
+10.Explicit Confirmation Modals(Active): Paper Submission. Dual-action popup ("Confirm Finish"). This Prevents accidental paper submissions before all questions are complete. 
+
+Criterion 5: Variables, Data Structures, Classes & Validation
+For these criterion I used repetitive/iterative testing approach for e.g. I tested the pdf parser script multiple times before using it in my code and I used multiple types of tests like the functional test as well as well testing on the types of user input that could occur(indicated to below)  as well as user acceptance tests
+Key Variables & Data Structures
+
+python
+# System Configuration Data Structures
+ 
+Real-Time Timing Tracking Map (Dictionary of Lists)
+ 
+
+Object-Oriented Class Diagrams       
+Input Validation Plan
+Input Field	Validation Check Type	| Test Boundary Criteria	Error Handling Behavior
+PDF File Upload	Type Check & Size Check	Must be `.pdf`, File size must be less than 15mb	Reject upload with notice: `"Invalid file type or size exceeded”
+User Password	Length & Complexity Check	Min 8 chars, 1 number, 1 special char.	Display tooltip highlighting missing complexity criteria.
+Question Answer Input	Sanitization Check	Strip script tags (`<script>`), length limit.	Escape HTML special characters before database insertion.
+Confidence Rating	Range Check 	Integer between 1and 5	Enforce selection via radio buttons or bounded dropdown.
+
+
+Criterion 6: Comprehensive Test Plan (Pre-Development)
+These values are present to check all the data types that are going to be inputted into the program to see its capacity
+Test ID	Testing Category	| Subroutine / Feature that were Tested	Test Input Data	Expected Output
+T01	Normal Data	User Registration	Valid email, password `P@ssword123`.	Account created, redirected to Dashboard.
+T02	Boundary Data	Question Text Input	Answer string exactly 500 characters.	Input accepted, saved without truncation.
+T03	Erroneous Data	PDF File Parser	Upload invalid text file `notes.txt`.	Upload rejected; error banner displayed.
+T04	Functional	Live Timer Tracking	Switch from Q1 to Q2 after 30 seconds	Q1 log records 30s; Q2 timer starts at 0s.
+T05	Robustness	Network Disconnect	Disconnect Wi-Fi mid-exam session.	Session cached locally; warning notification shown.
+T06	Usability	High-Contrast Toggle	Click contrast accessibility switch	CSS theme updates immediately to high-contrast colors.
+
+
+
+
+
+
+
+

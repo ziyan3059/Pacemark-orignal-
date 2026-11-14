@@ -1,0 +1,6 @@
+{
+  "name": "Sleek Monochrome Mesh Gradient",
+  "description": "High-performance autonomous WebGL moving mesh gradient background with sleek monochrome aesthetics, modern hero showcase, and developer export snippet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
