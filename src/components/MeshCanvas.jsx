@@ -1,32 +1,22 @@
 import React, { useEffect, useRef } from 'react';
 
-interface MeshCanvasProps {
-  className?: string;
-  speed?: number;
-  grainIntensity?: number;
-}
-
-export const MeshCanvas: React.FC<MeshCanvasProps> = ({
+export const MeshCanvas = ({
   className = '',
   speed = 0.25,
   grainIntensity = 0,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let mounted = true;
-    let cleanup: (() => void) | null = null;
-
-    cleanup = initCobaltMeshGradient(canvas, {
+    const cleanup = initCobaltMeshGradient(canvas, {
       speed,
       grainIntensity,
     });
 
     return () => {
-      mounted = false;
       cleanup?.();
     };
   }, [speed, grainIntensity]);
@@ -40,15 +30,7 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
   );
 };
 
-interface ShaderOptions {
-  speed: number;
-  grainIntensity: number;
-}
-
-function initCobaltMeshGradient(
-  canvas: HTMLCanvasElement,
-  options: ShaderOptions
-): () => void {
+function initCobaltMeshGradient(canvas, options) {
   const gl =
     canvas.getContext('webgl', {
       alpha: false,
@@ -57,15 +39,14 @@ function initCobaltMeshGradient(
       depth: false,
       stencil: false,
       preserveDrawingBuffer: false,
-    }) ||
-    (canvas.getContext('experimental-webgl') as WebGLRenderingContext | null);
+    }) || canvas.getContext('experimental-webgl');
 
   if (!gl) {
     console.warn('WebGL is not available on this device');
     return () => {};
   }
 
-  const vertSrc = `
+  const vertexShaderSource = `
     attribute vec2 position;
     varying vec2 vUv;
     void main() {
@@ -74,30 +55,23 @@ function initCobaltMeshGradient(
     }
   `;
 
-  // GPU Fragment Shader: Pure luminous palette (NO dark/black tones), +30% cobalt presence, soft silk grain
-  const fragSrc = `
+  const fragmentShaderSource = `
     precision highp float;
     varying vec2 vUv;
     uniform float uTime;
     uniform vec2 uResolution;
     uniform float uGrain;
 
-    // Palette Colors (Zero black / dark tones):
-    // 1. Ice White (#F5FAFA) - Dominant base field
     const vec3 cWhite   = vec3(0.961, 0.980, 0.980);
-    // 2. Electric Royal Cobalt (#0055FF) - Boosted vibrance & +30% color presence
     const vec3 cCobalt  = vec3(0.000, 0.333, 1.000);
-    // 3. Bright Pop Orange (#FF6103) - Energetic accent
     const vec3 cOrange  = vec3(1.000, 0.380, 0.012);
 
-    // Fast 2D pseudo-random hash for soft silk grain texture
     float hash21(vec2 p) {
       p = fract(p * vec2(234.34, 435.345));
       p += dot(p, p + 34.23);
       return fract(p.x * p.y);
     }
 
-    // Smooth gradient noise for watercolor domain warping
     vec2 hash22(vec2 p) {
       p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
       return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
@@ -121,7 +95,6 @@ function initCobaltMeshGradient(
 
       float t = uTime;
 
-      // Multi-frequency watercolor domain warping
       vec2 warp1 = vec2(
         snoise(uv * 1.3 + vec2(t * 0.20, t * 0.14)),
         snoise(uv * 1.3 + vec2(-t * 0.16, t * 0.22))
@@ -132,25 +105,20 @@ function initCobaltMeshGradient(
       );
       vec2 warpedUV = uv + (warp1 * 0.24 + warp2 * 0.12);
 
-      // Color nodes moving along organic Lissajous paths
-      // Balanced 50:50 White & Electric Royal Cobalt field anchors
       vec2 pWhite1  = vec2(0.28 * aspect + 0.26 * sin(t * 0.24),       0.32 + 0.24 * cos(t * 0.27));
       vec2 pWhite2  = vec2(0.74 * aspect + 0.28 * cos(t * 0.29 + 1.4), 0.72 + 0.24 * sin(t * 0.25));
 
       vec2 pCobalt1 = vec2(0.70 * aspect + 0.28 * cos(t * 0.26 + 0.6), 0.30 + 0.25 * sin(t * 0.28 + 1.8));
       vec2 pCobalt2 = vec2(0.26 * aspect + 0.26 * sin(t * 0.31 + 2.5), 0.70 + 0.25 * cos(t * 0.24 + 0.9));
 
-      // Pop Orange (#FF6103) - energetic luminous accent
       vec2 pOrange  = vec2(0.52 * aspect + 0.34 * cos(t * 0.38 + 2.2), 0.48 + 0.28 * sin(t * 0.34 + 0.9));
 
-      // Distance falloff calculations
       float dWhite1  = length(warpedUV - pWhite1);
       float dWhite2  = length(warpedUV - pWhite2);
       float dCobalt1 = length(warpedUV - pCobalt1);
       float dCobalt2 = length(warpedUV - pCobalt2);
       float dOrange  = length(warpedUV - pOrange);
 
-      // Equal 50:50 weight distribution between White and Electric Royal Cobalt with crisp watercolor folds
       float wWhite  = (1.0 / (pow(dWhite1,  1.9) * 2.3 + 0.08) + 1.0 / (pow(dWhite2,  1.9) * 2.3 + 0.08)) * 1.50;
       float wCobalt = (1.0 / (pow(dCobalt1, 1.9) * 2.3 + 0.08) + 1.0 / (pow(dCobalt2, 1.9) * 2.3 + 0.08)) * 1.50;
       float wOrange = (1.0 / (pow(dOrange,  2.2) * 3.4 + 0.09)) * 1.10;
@@ -158,7 +126,6 @@ function initCobaltMeshGradient(
       float totalW = wWhite + wCobalt + wOrange;
       vec3 col = (wWhite * cWhite + wCobalt * cCobalt + wOrange * cOrange) / totalW;
 
-      // Soft silk fine grain texture overlay that subtly fades out into the moving orange center
       if (uGrain > 0.001) {
         float orangeRatio = clamp(wOrange / totalW, 0.0, 1.0);
         float grainMask = 1.0 - smoothstep(0.10, 0.48, orangeRatio);
@@ -170,38 +137,38 @@ function initCobaltMeshGradient(
     }
   `;
 
-  function createShader(type: number, src: string) {
-    const s = gl!.createShader(type);
-    if (!s) return null;
-    gl!.shaderSource(s, src);
-    gl!.compileShader(s);
-    if (!gl!.getShaderParameter(s, gl!.COMPILE_STATUS)) {
-      console.error('Shader compilation failed:', gl!.getShaderInfoLog(s));
-      gl!.deleteShader(s);
+  function createShader(shaderType, sourceCode) {
+    const shader = gl.createShader(shaderType);
+    if (!shader) return null;
+    gl.shaderSource(shader, sourceCode);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error('Shader compilation failed:', gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
       return null;
     }
-    return s;
+    return shader;
   }
 
-  const vs = createShader(gl.VERTEX_SHADER, vertSrc);
-  const fs = createShader(gl.FRAGMENT_SHADER, fragSrc);
-  if (!vs || !fs) return () => {};
+  const vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSource);
+  const fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+  if (!vertexShader || !fragmentShader) return () => {};
 
-  const prog = gl.createProgram();
-  if (!prog) return () => {};
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
+  const program = gl.createProgram();
+  if (!program) return () => {};
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
 
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.error('Program linking failed:', gl.getProgramInfoLog(prog));
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program linking failed:', gl.getProgramInfoLog(program));
     return () => {};
   }
 
-  gl.useProgram(prog);
+  gl.useProgram(program);
 
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
   gl.bufferData(
     gl.ARRAY_BUFFER,
     new Float32Array([
@@ -212,92 +179,93 @@ function initCobaltMeshGradient(
        1, -1,
        1,  1,
     ]),
-    gl.STATIC_DRAW
+    gl.STATIC_DRAW,
   );
 
-  const posLoc = gl.getAttribLocation(prog, 'position');
-  gl.enableVertexAttribArray(posLoc);
-  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+  const positionLocation = gl.getAttribLocation(program, 'position');
+  gl.enableVertexAttribArray(positionLocation);
+  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-  const uTimeLoc = gl.getUniformLocation(prog, 'uTime');
-  const uResLoc = gl.getUniformLocation(prog, 'uResolution');
-  const uGrainLoc = gl.getUniformLocation(prog, 'uGrain');
+  const timeLocation = gl.getUniformLocation(program, 'uTime');
+  const resolutionLocation = gl.getUniformLocation(program, 'uResolution');
+  const grainLocation = gl.getUniformLocation(program, 'uGrain');
 
-  // CPU Optimization 1: DPR clamped to 1.25x
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
-    const w = Math.floor(canvas.clientWidth * dpr);
-    const h = Math.floor(canvas.clientHeight * dpr);
-    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
-      canvas.width = w;
-      canvas.height = h;
-      gl!.viewport(0, 0, canvas.width, canvas.height);
+  function handleResize() {
+    // Cap pixel ratio at 1.25 to keep fragment shading responsive on high-DPI displays
+    const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);
+    const scaledWidth = Math.floor(canvas.clientWidth * devicePixelRatio);
+    const scaledHeight = Math.floor(canvas.clientHeight * devicePixelRatio);
+    if (
+      scaledWidth > 0 &&
+      scaledHeight > 0 &&
+      (canvas.width !== scaledWidth || canvas.height !== scaledHeight)
+    ) {
+      canvas.width = scaledWidth;
+      canvas.height = scaledHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
     }
   }
 
-  resize();
-  window.addEventListener('resize', resize, { passive: true });
+  handleResize();
+  window.addEventListener('resize', handleResize, { passive: true });
 
   let isRunning = true;
-  let rafId: number | null = null;
-  const startTime = performance.now();
-  let pausedElapsed = 0;
-  let lastPauseTime = 0;
+  let animationFrameId = null;
+  const startTimeMs = performance.now();
+  let pausedDurationMs = 0;
+  let pausedAtMs = 0;
 
-  // CPU Optimization 2: Auto-pause on inactive tab
-  const handleVisibility = () => {
+  const handleVisibilityChange = () => {
     if (document.hidden) {
       if (isRunning) {
         isRunning = false;
-        lastPauseTime = performance.now();
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
+        pausedAtMs = performance.now();
+        if (animationFrameId !== null) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
         }
       }
-    } else {
-      if (!isRunning) {
-        isRunning = true;
-        if (lastPauseTime > 0) {
-          pausedElapsed += performance.now() - lastPauseTime;
-        }
-        rafId = requestAnimationFrame(loop);
+    } else if (!isRunning) {
+      isRunning = true;
+      if (pausedAtMs > 0) {
+        pausedDurationMs += performance.now() - pausedAtMs;
       }
+      animationFrameId = requestAnimationFrame(renderFrame);
     }
   };
-  document.addEventListener('visibilitychange', handleVisibility);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 
-  function loop(now: number) {
+  function renderFrame(currentTimeMs) {
     if (!isRunning || !gl) return;
 
-    resize();
+    handleResize();
 
-    const elapsedSeconds = (now - startTime - pausedElapsed) * 0.001 * options.speed;
+    const elapsedSeconds = (currentTimeMs - startTimeMs - pausedDurationMs) * 0.001 * options.speed;
 
-    gl.useProgram(prog);
-    gl.uniform1f(uTimeLoc, elapsedSeconds);
-    gl.uniform2f(uResLoc, canvas.width, canvas.height);
-    gl.uniform1f(uGrainLoc, options.grainIntensity);
+    gl.useProgram(program);
+    gl.uniform1f(timeLocation, elapsedSeconds);
+    gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+    gl.uniform1f(grainLocation, options.grainIntensity);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    rafId = requestAnimationFrame(loop);
+    animationFrameId = requestAnimationFrame(renderFrame);
   }
 
-  rafId = requestAnimationFrame(loop);
+  animationFrameId = requestAnimationFrame(renderFrame);
 
   return () => {
     isRunning = false;
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId);
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
     }
-    window.removeEventListener('resize', resize);
-    document.removeEventListener('visibilitychange', handleVisibility);
+    window.removeEventListener('resize', handleResize);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     if (gl) {
-      gl.deleteBuffer(buf);
-      gl.deleteProgram(prog);
-      gl.deleteShader(vs);
-      gl.deleteShader(fs);
+      gl.deleteBuffer(vertexBuffer);
+      gl.deleteProgram(program);
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
     }
   };
 }

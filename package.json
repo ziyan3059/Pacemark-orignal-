@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "node server.js",
     "build": "vite build",
-    "start": "NODE_ENV=production tsx server.ts",
+    "start": "NODE_ENV=production node server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "node -e \"import('node:fs').then(async fs=>{const {execFileSync}=await import('node:child_process');const esbuild=await import('esbuild');const walk=(d)=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.name==='node_modules'||e.name==='dist'||e.name.startsWith('.')?[]:e.isDirectory()?walk(d+'/'+e.name):[d+'/'+e.name]);const files=walk('.').filter(f=>/\\.(js|jsx)$/.test(f));for(const f of files){if(f.endsWith('.js'))execFileSync(process.execPath,['--check',f]);else esbuild.transformSync(fs.readFileSync(f,'utf8'),{loader:'jsx'});}console.log('Verified '+files.length+' JavaScript files');})\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

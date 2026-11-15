@@ -1,15 +1,9 @@
 import json
-import os
 import re
 import statistics
 import sys
 import unicodedata
-try:
-    import pymupdf
-except ImportError:
-    pymupdf = None
 
-# Ligature & whitespace normalization
 LIGATURES = {
     "\ufb00": "ff",
     "\ufb01": "fi",
@@ -25,7 +19,6 @@ LIGATURES = {
     "\u00a0": " ",
 }
 
-# Marks patterns: [2 Marks], [2], (3 marks), 2 marks at end of line
 MARKS_BRACKET_RE = re.compile(
     r"(?:\[\s*(?:total\s*)?(\d{1,2})\s*(?:marks?|pts?|points?)?\s*\]|\(\s*(\d{1,2})\s*(?:marks?|pts?|points?)\s*\))\s*\.?$",
     re.IGNORECASE,
@@ -39,18 +32,17 @@ TOTAL_MARKS_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Question anchors
-TOP_Q_COMBINED_RE = re.compile(
+TOP_QUESTION_COMBINED_RE = re.compile(
     r"^(?:Q(?:uestion)?\s*\.?\s*)?(\d{1,2})\s*(?:[\.\):]\s*|\s+)\(\s*([a-z])\s*\)(?:\s*\(\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\s*\))?\s*(.*)$",
     re.IGNORECASE,
 )
-TOP_Q_RE = re.compile(
+TOP_QUESTION_RE = re.compile(
     r"^(?:Q(?:uestion)?\s*\.?\s*(\d{1,2})|(\d{1,2})\s*[\.\):])\s*(.*)$",
     re.IGNORECASE,
 )
-BARE_NUM_ONLY_RE = re.compile(r"^(\d{1,2})$")
-BARE_NUM_LINE_RE = re.compile(r"^(\d{1,2})\s+([A-Z\"'(\[].{3,})$")
-SUB_Q_RE = re.compile(
+BARE_NUMBER_ONLY_RE = re.compile(r"^(\d{1,2})$")
+BARE_NUMBER_LINE_RE = re.compile(r"^(\d{1,2})\s+([A-Z\"'(\[].{3,})$")
+SUB_QUESTION_RE = re.compile(
     r"^(?:\(\s*([a-z])\s*\)|([a-z])\s*[\.\)])\s*(?:\(\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\s*\)\s*)?(.*)$"
 )
 ROMAN_PART_RE = re.compile(
@@ -58,7 +50,6 @@ ROMAN_PART_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Noise & boilerplate filters (note: lone 1-2 digit numbers are filtered contextually by page position, not globally)
 ANSWER_LEADER_RE = re.compile(r"[\._\-…]{4,}\s*$")
 NOISE_LINE_RE = re.compile(
     r"^(?:"
@@ -149,26 +140,33 @@ STOPWORDS = {
     "mark", "marks", "question", "using", "used", "about", "between", "within", "during",
 }
 
+INLINE_SPLIT_RE = re.compile(
+    r"(?<=[.?!:\])])\s+(?="
+    r"(?:Q(?:uestion)?\s*\.?\s*\d{1,2}|\d{1,2}\s*[\.\)])\s+[A-Z\"'(\[]"
+    r"|\(\s*[a-h]\s*\)\s+[A-Z0-9\"'(\[]"
+    r"|\(\s*(?:i{1,3}|iv|v|vi{0,3})\s*\)\s+[A-Z0-9\"'(\[]"
+    r")",
+)
+
 
 def classify_topic_and_keywords(prompt: str, stem_context: str | None = None) -> tuple[str, list[str]]:
-    combined = f"{stem_context or ''} {prompt}".lower()
+    combined_text = f"{stem_context or ''} {prompt}".lower()
     best_topic = "General Specification"
-    best_hits = 0
+    best_hit_count = 0
     matched_terms: list[str] = []
 
     for topic, terms in TOPIC_KEYWORDS:
-        hits = [term for term in terms if term in combined]
-        if len(hits) > best_hits:
-            best_hits = len(hits)
+        hits = [term for term in terms if term in combined_text]
+        if len(hits) > best_hit_count:
+            best_hit_count = len(hits)
             best_topic = topic
             matched_terms = hits
 
-    # Extract meaningful content words as rubric keywords
-    tokens = re.findall(r"[a-z0-9\-]{3,}", combined)
+    tokens = re.findall(r"[a-z0-9\-]{3,}", combined_text)
     keywords: list[str] = list(dict.fromkeys(matched_terms))
-    for tok in tokens:
-        if tok not in STOPWORDS and not tok.isdigit() and tok not in keywords:
-            keywords.append(tok)
+    for token in tokens:
+        if token not in STOPWORDS and not token.isdigit() and token not in keywords:
+            keywords.append(token)
         if len(keywords) >= 6:
             break
 
@@ -176,14 +174,13 @@ def classify_topic_and_keywords(prompt: str, stem_context: str | None = None) ->
 
 
 def normalize_text(text: str) -> str:
-    for src, dst in LIGATURES.items():
-        text = text.replace(src, dst)
+    for ligature, replacement in LIGATURES.items():
+        text = text.replace(ligature, replacement)
     text = unicodedata.normalize("NFKC", text)
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
 def strip_answer_leaders(text: str) -> str:
-    # Remove trailing dot/underscore fill-in lines while keeping sentence punctuation
     cleaned = ANSWER_LEADER_RE.sub("", text).strip()
     cleaned = re.sub(r"\s*[\._]{5,}\s*", " ___ ", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
@@ -195,8 +192,8 @@ def extract_marks(text: str) -> tuple[str, int | None]:
         match = MARKS_INLINE_RE.search(text)
     if not match:
         return text, None
-    raw_num = match.group(1) or match.group(2)
-    marks = int(raw_num) if raw_num else None
+    raw_number = match.group(1) or match.group(2)
+    marks = int(raw_number) if raw_number else None
     cleaned = text[: match.start()] + " " + text[match.end() :]
     cleaned = strip_answer_leaders(re.sub(r"\s+", " ", cleaned).strip())
     return cleaned, marks
@@ -211,63 +208,63 @@ def is_noise_line(text: str) -> bool:
         return True
     if TOTAL_MARKS_ONLY_RE.match(text):
         return True
-    # Lines where >65% of characters are dots, underscores, or dashes
-    punct_fill = sum(1 for c in text if c in "._-…|")
-    if len(text) >= 6 and (punct_fill / len(text)) > 0.6:
+    punct_fill_count = sum(1 for character in text if character in "._-…|")
+    if len(text) >= 6 and (punct_fill_count / len(text)) > 0.6:
         return True
     return False
 
 
 def join_lines_dehyphenate(lines: list[str]) -> str:
-    out = ""
-    for raw in lines:
-        part = raw.strip()
-        if not part:
+    joined_text = ""
+    for raw_line in lines:
+        segment = raw_line.strip()
+        if not segment:
             continue
-        if out.endswith("-") and len(out) >= 2 and out[-2].isalpha() and part[0].islower():
-            out = out[:-1] + part
-        elif out:
-            out += " " + part
+        if (
+            joined_text.endswith("-")
+            and len(joined_text) >= 2
+            and joined_text[-2].isalpha()
+            and segment[0].islower()
+        ):
+            joined_text = joined_text[:-1] + segment
+        elif joined_text:
+            joined_text += " " + segment
         else:
-            out = part
-    return re.sub(r"\s+", " ", out).strip()
+            joined_text = segment
+    return re.sub(r"\s+", " ", joined_text).strip()
 
 
 def process_visual_lines(pages_data: list[dict]) -> list[dict]:
-    """
-    Reconstruct reading-order lines from page geometry spans,
-    strip top/bottom headers & footers, and detect two-column layouts.
-    """
     raw_pages_lines: list[list[dict]] = []
 
-    for page_idx, page_info in enumerate(pages_data):
-        page_w = float(page_info.get("width") or 595.0)
-        page_h = float(page_info.get("height") or 842.0)
-        header_cutoff = page_h * 0.068
-        footer_cutoff = page_h * 0.932
+    for page_index, page_info in enumerate(pages_data):
+        page_width = float(page_info.get("width") or 595.0)
+        page_height = float(page_info.get("height") or 842.0)
+        header_cutoff = page_height * 0.068
+        footer_cutoff = page_height * 0.932
 
         spans: list[dict] = []
-        for sp in page_info.get("spans", []):
-            txt = normalize_text(sp.get("text", ""))
-            if not txt:
+        for raw_span in page_info.get("spans", []):
+            span_text = normalize_text(raw_span.get("text", ""))
+            if not span_text:
                 continue
-            x0 = float(sp.get("x0", 0.0))
-            y0 = float(sp.get("y0", 0.0))
-            x1 = float(sp.get("x1", 0.0))
-            y1 = float(sp.get("y1", 0.0))
+            x0 = float(raw_span.get("x0", 0.0))
+            y0 = float(raw_span.get("y0", 0.0))
+            x1 = float(raw_span.get("x1", 0.0))
+            y1 = float(raw_span.get("y1", 0.0))
             if (y1 < header_cutoff or y0 > footer_cutoff) and (
-                len(txt) <= 55 or re.search(r"page\s+\d+|turn\s+over|^\d+$", txt, re.I)
+                len(span_text) <= 55 or re.search(r"page\s+\d+|turn\s+over|^\d+$", span_text, re.I)
             ):
                 continue
             spans.append(
                 {
-                    "text": txt,
+                    "text": span_text,
                     "x0": x0,
                     "y0": y0,
                     "x1": x1,
                     "y1": y1,
-                    "size": float(sp.get("size", 11.0)),
-                    "is_bold": bool(sp.get("is_bold", False)),
+                    "size": float(raw_span.get("size", 11.0)),
+                    "is_bold": bool(raw_span.get("is_bold", False)),
                 }
             )
 
@@ -275,164 +272,118 @@ def process_visual_lines(pages_data: list[dict]) -> list[dict]:
             raw_pages_lines.append([])
             continue
 
-        # Detect if page has distinct two-column structure
-        mid_x = page_w * 0.5
-        left_spans = [s for s in spans if s["x1"] <= mid_x + 8]
-        right_spans = [s for s in spans if s["x0"] >= mid_x - 8]
+        mid_x = page_width * 0.5
+        left_spans = [span_item for span_item in spans if span_item["x1"] <= mid_x + 8]
+        right_spans = [span_item for span_item in spans if span_item["x0"] >= mid_x - 8]
         is_two_column = (
             len(left_spans) >= 8
             and len(right_spans) >= 8
-            and sum(1 for s in spans if s["x0"] < mid_x - 15 and s["x1"] > mid_x + 15) <= 2
+            and sum(1 for span_item in spans if span_item["x0"] < mid_x - 15 and span_item["x1"] > mid_x + 15) <= 2
         )
 
         column_groups = [left_spans, right_spans] if is_two_column else [spans]
         page_lines: list[dict] = []
 
-        for col_spans in column_groups:
-            col_spans.sort(key=lambda s: (round(s["y0"], 1), round(s["x0"], 1)))
-            current_group: list[dict] = []
+        for column_spans in column_groups:
+            column_spans.sort(key=lambda span_item: (round(span_item["y0"], 1), round(span_item["x0"], 1)))
+            current_line_spans: list[dict] = []
 
-            def flush_group():
-                if not current_group:
+            def flush_line_spans():
+                if not current_line_spans:
                     return
-                current_group.sort(key=lambda s: s["x0"])
-                # Join spans on same visual baseline, inserting space if horizontal gap > 1.5pt
+                current_line_spans.sort(key=lambda span_item: span_item["x0"])
                 merged_parts: list[str] = []
-                prev_x1 = None
-                for sp in current_group:
-                    if prev_x1 is not None and (sp["x0"] - prev_x1) > 1.5:
-                        merged_parts.append(" " + sp["text"])
+                previous_x1 = None
+                for span_item in current_line_spans:
+                    if previous_x1 is not None and (span_item["x0"] - previous_x1) > 1.5:
+                        merged_parts.append(" " + span_item["text"])
                     else:
-                        merged_parts.append(sp["text"])
-                    prev_x1 = sp["x1"]
-                text = strip_answer_leaders(re.sub(r"\s+", " ", "".join(merged_parts)).strip())
-                if text and not is_noise_line(text):
-                    # Contextually ignore centered/right-margin lone digits (page numbers) while keeping left-margin question numbers
-                    if BARE_NUM_ONLY_RE.match(text):
-                        center_x = (current_group[0]["x0"] + current_group[-1]["x1"]) / 2.0
-                        is_left_num = current_group[0]["x0"] <= page_w * 0.25 or current_group[0]["is_bold"]
-                        if not is_left_num and (abs(center_x - page_w * 0.5) <= 65 or current_group[0]["x0"] > page_w * 0.78):
+                        merged_parts.append(span_item["text"])
+                    previous_x1 = span_item["x1"]
+                line_text = strip_answer_leaders(re.sub(r"\s+", " ", "".join(merged_parts)).strip())
+                if line_text and not is_noise_line(line_text):
+                    # Drop standalone footer/margin page numbers while keeping left-margin question numbers
+                    if BARE_NUMBER_ONLY_RE.match(line_text):
+                        center_x = (current_line_spans[0]["x0"] + current_line_spans[-1]["x1"]) / 2.0
+                        is_left_number = current_line_spans[0]["x0"] <= page_width * 0.25 or current_line_spans[0]["is_bold"]
+                        if not is_left_number and (
+                            abs(center_x - page_width * 0.5) <= 65 or current_line_spans[0]["x0"] > page_width * 0.78
+                        ):
                             return
                     page_lines.append(
                         {
-                            "page": page_idx + 1,
-                            "text": text,
-                            "x0": current_group[0]["x0"],
-                            "y0": current_group[0]["y0"],
-                            "is_bold": current_group[0]["is_bold"],
-                            "size": statistics.median(s["size"] for s in current_group),
+                            "page": page_index + 1,
+                            "text": line_text,
+                            "x0": current_line_spans[0]["x0"],
+                            "y0": current_line_spans[0]["y0"],
+                            "is_bold": current_line_spans[0]["is_bold"],
+                            "size": statistics.median(span_item["size"] for span_item in current_line_spans),
                         }
                     )
 
-            for sp in col_spans:
-                if not current_group:
-                    current_group.append(sp)
+            for span_item in column_spans:
+                if not current_line_spans:
+                    current_line_spans.append(span_item)
                     continue
-                ref_y0 = current_group[0]["y0"]
-                if abs(sp["y0"] - ref_y0) <= 4.0:
-                    current_group.append(sp)
+                reference_y0 = current_line_spans[0]["y0"]
+                if abs(span_item["y0"] - reference_y0) <= 4.0:
+                    current_line_spans.append(span_item)
                 else:
-                    flush_group()
-                    current_group = [sp]
-            flush_group()
+                    flush_line_spans()
+                    current_line_spans = [span_item]
+            flush_line_spans()
 
         raw_pages_lines.append(page_lines)
 
-    # Strip lines that repeat verbatim at top/bottom across multiple pages (running headers/footers)
     if len(raw_pages_lines) >= 2:
         line_counts: dict[str, int] = {}
-        for plines in raw_pages_lines:
+        for page_line_group in raw_pages_lines:
             seen_on_page = set()
-            for item in plines[:3] + plines[-3:]:
-                t = item["text"].lower()
-                if len(t) <= 80 and t not in seen_on_page:
-                    seen_on_page.add(t)
-                    line_counts[t] = line_counts.get(t, 0) + 1
-        repeated = {t for t, c in line_counts.items() if c >= 2 and not MARKS_INLINE_RE.search(t)}
+            for line_entry in page_line_group[:3] + page_line_group[-3:]:
+                lowered_text = line_entry["text"].lower()
+                if len(lowered_text) <= 80 and lowered_text not in seen_on_page:
+                    seen_on_page.add(lowered_text)
+                    line_counts[lowered_text] = line_counts.get(lowered_text, 0) + 1
+        repeated_headers = {
+            lowered_text
+            for lowered_text, occurrence_count in line_counts.items()
+            if occurrence_count >= 2 and not MARKS_INLINE_RE.search(lowered_text)
+        }
     else:
-        repeated = set()
+        repeated_headers = set()
 
-    all_lines: list[dict] = []
-    for plines in raw_pages_lines:
-        page_text_lower = " ".join(l["text"].lower() for l in plines)
+    filtered_lines: list[dict] = []
+    for page_line_group in raw_pages_lines:
+        page_text_lower = " ".join(entry["text"].lower() for entry in page_line_group)
         has_question_anchor = any(
-            TOP_Q_COMBINED_RE.match(l["text"])
-            or TOP_Q_RE.match(l["text"])
-            or BARE_NUM_LINE_RE.match(l["text"])
-            for l in plines
+            TOP_QUESTION_COMBINED_RE.match(entry["text"])
+            or TOP_QUESTION_RE.match(entry["text"])
+            or BARE_NUMBER_LINE_RE.match(entry["text"])
+            for entry in page_line_group
         )
-        # Skip cover/instruction-only pages that have no question anchors
         if not has_question_anchor and any(marker in page_text_lower for marker in COVER_PAGE_MARKERS):
             continue
 
-        for item in plines:
-            if item["text"].lower() in repeated:
+        for line_entry in page_line_group:
+            if line_entry["text"].lower() in repeated_headers:
                 continue
-            all_lines.append(item)
+            filtered_lines.append(line_entry)
 
-    return all_lines
-
-
-def extract_visual_lines(doc) -> tuple[list[dict], int]:
-    pages_data: list[dict] = []
-    total_images = 0
-    for page in doc:
-        total_images += len(page.get_images(full=True))
-        page_dict = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)
-        spans: list[dict] = []
-        for block in page_dict.get("blocks", []):
-            if block.get("type") != 0:
-                continue
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    x0, y0, x1, y1 = span.get("bbox", (0, 0, 0, 0))
-                    spans.append(
-                        {
-                            "text": span.get("text", ""),
-                            "x0": float(x0),
-                            "y0": float(y0),
-                            "x1": float(x1),
-                            "y1": float(y1),
-                            "size": float(span.get("size", 11.0)),
-                            "is_bold": bool(int(span.get("flags", 0)) & 16),
-                        }
-                    )
-        pages_data.append(
-            {
-                "width": page.rect.width or 595.0,
-                "height": page.rect.height or 842.0,
-                "spans": spans,
-            }
-        )
-    return process_visual_lines(pages_data), total_images
-
-
-INLINE_SPLIT_RE = re.compile(
-    r"(?<=[.?!:\])])\s+(?="
-    r"(?:Q(?:uestion)?\s*\.?\s*\d{1,2}|\d{1,2}\s*[\.\)])\s+[A-Z\"'(\[]"
-    r"|\(\s*[a-h]\s*\)\s+[A-Z0-9\"'(\[]"
-    r"|\(\s*(?:i{1,3}|iv|v|vi{0,3})\s*\)\s+[A-Z0-9\"'(\[]"
-    r")",
-)
+    return filtered_lines
 
 
 def split_inline_markers(lines: list[dict]) -> list[dict]:
-    """
-    Split single visual lines that pack multiple sequential question anchors
-    (e.g. '1. What is RAM? 2. What is ROM?' or '1. Memory: (a) Define RAM. (b) Define ROM.')
-    into separate logical lines while avoiding mid-sentence false positives.
-    """
-    expanded: list[dict] = []
-    for item in lines:
-        parts = INLINE_SPLIT_RE.split(item["text"])
-        if len(parts) <= 1:
-            expanded.append(item)
+    expanded_lines: list[dict] = []
+    for line_entry in lines:
+        segments = INLINE_SPLIT_RE.split(line_entry["text"])
+        if len(segments) <= 1:
+            expanded_lines.append(line_entry)
             continue
-        for p in parts:
-            cleaned = p.strip()
-            if cleaned:
-                expanded.append({**item, "text": cleaned})
-    return expanded
+        for segment in segments:
+            cleaned_segment = segment.strip()
+            if cleaned_segment:
+                expanded_lines.append({**line_entry, "text": cleaned_segment})
+    return expanded_lines
 
 
 def is_actionable_question(prompt: str, marks: int | None, has_label: bool = False) -> bool:
@@ -452,19 +403,14 @@ def is_actionable_question(prompt: str, marks: int | None, has_label: bool = Fal
 
 
 def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
-    """
-    Hierarchical state-machine parser:
-    Tracks parent question stems (1, 2, Q1), sub-questions ((a), (b)), and sub-parts ((i), (ii)),
-    attaching parent stem context to leaf prompts and deduplicating results.
-    """
     if not lines:
         return []
 
     lines = split_inline_markers(lines)
-    left_margin = min(l["x0"] for l in lines)
+    left_margin = min(entry["x0"] for entry in lines)
     questions: list[dict] = []
 
-    parent_num: str | None = None
+    parent_number: str | None = None
     parent_stem_lines: list[str] = []
     sub_label: str | None = None
     sub_stem_lines: list[str] = []
@@ -476,53 +422,53 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
     seen_sub_emitted_leaf = False
 
     def build_label() -> str | None:
-        if not parent_num:
+        if not parent_number:
             return None
-        lbl = parent_num
+        label = parent_number
         if sub_label:
-            lbl += f"({sub_label})"
+            label += f"({sub_label})"
         if part_label:
-            lbl += f"({part_label})"
-        return lbl
+            label += f"({part_label})"
+        return label
 
     def build_stem_context() -> str | None:
-        parts: list[str] = []
+        stem_parts: list[str] = []
         if sub_label and parent_stem_lines:
-            parts.append(join_lines_dehyphenate(parent_stem_lines))
+            stem_parts.append(join_lines_dehyphenate(parent_stem_lines))
         if part_label and sub_stem_lines:
-            parts.append(join_lines_dehyphenate(sub_stem_lines))
-        ctx = " ".join(p for p in parts if p).strip()
-        if ctx and len(ctx) >= 12:
-            return ctx[:360]
+            stem_parts.append(join_lines_dehyphenate(sub_stem_lines))
+        stem_context = " ".join(part for part in stem_parts if part).strip()
+        if stem_context and len(stem_context) >= 12:
+            return stem_context[:360]
         return None
 
     def flush_leaf(force_keep: bool = False):
         nonlocal active_lines, active_marks, seen_parent_emitted_leaf, seen_sub_emitted_leaf
         if not active_lines:
             return
-        combined = join_lines_dehyphenate(active_lines)
-        cleaned_prompt, found_marks = extract_marks(combined)
+        combined_prompt = join_lines_dehyphenate(active_lines)
+        cleaned_prompt, found_marks = extract_marks(combined_prompt)
         marks = active_marks or found_marks
-        has_label = parent_num is not None or sub_label is not None
+        has_label = parent_number is not None or sub_label is not None
 
         if force_keep or is_actionable_question(cleaned_prompt, marks, has_label=has_label):
             resolved_marks = max(1, min(25, marks or 2))
-            ctx = build_stem_context()
-            topic_cat, rubric_kw = classify_topic_and_keywords(cleaned_prompt, ctx)
-            item: dict = {
+            stem_context = build_stem_context()
+            topic_category, rubric_keywords = classify_topic_and_keywords(cleaned_prompt, stem_context)
+            question_record: dict = {
                 "prompt": cleaned_prompt[:480],
                 "marks": resolved_marks,
                 "recommendedTimeSeconds": max(45, resolved_marks * 60),
-                "topicCategory": topic_cat,
-                "rubricKeywords": rubric_kw,
+                "topicCategory": topic_category,
+                "rubricKeywords": rubric_keywords,
                 "page": active_page,
             }
-            q_num = build_label()
-            if q_num:
-                item["questionNumber"] = q_num
-            if ctx and ctx.lower() not in cleaned_prompt.lower():
-                item["stemContext"] = ctx
-            questions.append(item)
+            question_number = build_label()
+            if question_number:
+                question_record["questionNumber"] = question_number
+            if stem_context and stem_context.lower() not in cleaned_prompt.lower():
+                question_record["stemContext"] = stem_context
+            questions.append(question_record)
             seen_parent_emitted_leaf = True
             if sub_label is not None:
                 seen_sub_emitted_leaf = True
@@ -530,25 +476,24 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
         active_lines = []
         active_marks = None
 
-    def is_expected_next_num(candidate_str: str) -> bool:
+    def is_expected_next_number(candidate_str: str) -> bool:
         if not candidate_str.isdigit():
             return False
-        cand = int(candidate_str)
-        if parent_num is None:
-            return cand == 1
-        if parent_num.isdigit():
-            return cand == int(parent_num) + 1
+        candidate_number = int(candidate_str)
+        if parent_number is None:
+            return candidate_number == 1
+        if parent_number.isdigit():
+            return candidate_number == int(parent_number) + 1
         return False
 
-    for item in lines:
-        text = item["text"]
-        page = item["page"]
-        near_left_margin = item["x0"] <= left_margin + 36
+    for line_entry in lines:
+        line_text = line_entry["text"]
+        page_number = line_entry["page"]
+        near_left_margin = line_entry["x0"] <= left_margin + 36
 
-        # Skip obvious section headings before content
-        if SECTION_HEADER_RE.match(text) and not MARKS_INLINE_RE.search(text):
+        if SECTION_HEADER_RE.match(line_text) and not MARKS_INLINE_RE.search(line_text):
             flush_leaf()
-            parent_num = None
+            parent_number = None
             parent_stem_lines = []
             sub_label = None
             sub_stem_lines = []
@@ -557,58 +502,56 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
             seen_sub_emitted_leaf = False
             continue
 
-        # 1. Combined top + sub-part, e.g. "1 (a) Explain..." or "1(a)(i) State..."
-        m_comb = TOP_Q_COMBINED_RE.match(text)
-        if m_comb:
+        combined_match = TOP_QUESTION_COMBINED_RE.match(line_text)
+        if combined_match:
             flush_leaf()
-            parent_num = m_comb.group(1)
+            parent_number = combined_match.group(1)
             parent_stem_lines = []
-            sub_label = m_comb.group(2).lower()
+            sub_label = combined_match.group(2).lower()
             sub_stem_lines = []
-            part_label = m_comb.group(3).lower() if m_comb.group(3) else None
+            part_label = combined_match.group(3).lower() if combined_match.group(3) else None
             seen_parent_emitted_leaf = False
             seen_sub_emitted_leaf = False
-            active_page = page
+            active_page = page_number
 
-            body, marks = extract_marks(m_comb.group(4).strip())
-            if body:
-                active_lines.append(body)
+            body_text, marks = extract_marks(combined_match.group(4).strip())
+            if body_text:
+                active_lines.append(body_text)
             if marks is not None:
                 active_marks = marks
                 flush_leaf(force_keep=True)
             continue
 
-        # 2. Top-level numbered question ("1. ...", "Q1 ...", standalone "2", or sequential/left-margin "2 Explain...")
-        m_top = TOP_Q_RE.match(text)
-        m_bare_only = BARE_NUM_ONLY_RE.match(text) if not m_top else None
-        m_bare = BARE_NUM_LINE_RE.match(text) if (not m_top and not m_bare_only) else None
+        top_match = TOP_QUESTION_RE.match(line_text)
+        bare_only_match = BARE_NUMBER_ONLY_RE.match(line_text) if not top_match else None
+        bare_line_match = BARE_NUMBER_LINE_RE.match(line_text) if (not top_match and not bare_only_match) else None
 
-        prev_ended_cleanly = (
+        previous_ended_cleanly = (
             not active_lines
             or bool(re.search(r"[.?!:\])\"']\s*$", active_lines[-1]))
         )
 
-        if m_bare_only and not (
-            (near_left_margin or item["is_bold"] or is_expected_next_num(m_bare_only.group(1)))
-            and (prev_ended_cleanly or item["is_bold"])
+        if bare_only_match and not (
+            (near_left_margin or line_entry["is_bold"] or is_expected_next_number(bare_only_match.group(1)))
+            and (previous_ended_cleanly or line_entry["is_bold"])
         ):
-            m_bare_only = None
-        if m_bare and not (
-            (near_left_margin or item["is_bold"] or is_expected_next_num(m_bare.group(1)))
-            and (prev_ended_cleanly or item["is_bold"])
+            bare_only_match = None
+        if bare_line_match and not (
+            (near_left_margin or line_entry["is_bold"] or is_expected_next_number(bare_line_match.group(1)))
+            and (previous_ended_cleanly or line_entry["is_bold"])
         ):
-            m_bare = None
+            bare_line_match = None
 
-        if m_top or m_bare or m_bare_only:
+        if top_match or bare_line_match or bare_only_match:
             flush_leaf()
-            if m_top:
-                parent_num = m_top.group(1) or m_top.group(2)
-                raw_body = m_top.group(3).strip()
-            elif m_bare:
-                parent_num = m_bare.group(1)
-                raw_body = m_bare.group(2).strip()
+            if top_match:
+                parent_number = top_match.group(1) or top_match.group(2)
+                raw_body = top_match.group(3).strip()
+            elif bare_line_match:
+                parent_number = bare_line_match.group(1)
+                raw_body = bare_line_match.group(2).strip()
             else:
-                parent_num = m_bare_only.group(1)  # type: ignore[union-attr]
+                parent_number = bare_only_match.group(1)
                 raw_body = ""
 
             parent_stem_lines = []
@@ -617,24 +560,23 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
             part_label = None
             seen_parent_emitted_leaf = False
             seen_sub_emitted_leaf = False
-            active_page = page
+            active_page = page_number
 
-            body, marks = extract_marks(raw_body)
-            if body:
-                active_lines.append(body)
+            body_text, marks = extract_marks(raw_body)
+            if body_text:
+                active_lines.append(body_text)
             if marks is not None:
                 active_marks = marks
                 flush_leaf(force_keep=True)
             continue
 
-        # 3. Sub-part Roman numeral "(i)", "(ii)" (check before single-letter (a) so (i) isn't grabbed as letter i)
-        m_roman = ROMAN_PART_RE.match(text)
-        if m_roman and parent_num is not None:
-            roman_tok = (m_roman.group(1) or m_roman.group(2)).lower()
-            if roman_tok != "i" or sub_label is not None or part_label is not None:
+        roman_match = ROMAN_PART_RE.match(line_text)
+        if roman_match and parent_number is not None:
+            roman_token = (roman_match.group(1) or roman_match.group(2)).lower()
+            if roman_token != "i" or sub_label is not None or part_label is not None:
                 if active_lines and not part_label and not seen_sub_emitted_leaf:
-                    combined_sub = join_lines_dehyphenate(active_lines)
-                    _, sub_marks = extract_marks(combined_sub)
+                    combined_sub_stem = join_lines_dehyphenate(active_lines)
+                    _, sub_marks = extract_marks(combined_sub_stem)
                     if sub_marks is None:
                         sub_stem_lines.extend(active_lines)
                         active_lines = []
@@ -643,23 +585,22 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
                         flush_leaf()
                 else:
                     flush_leaf()
-                part_label = roman_tok
-                active_page = page
-                body, marks = extract_marks(m_roman.group(3).strip())
-                if body:
-                    active_lines.append(body)
+                part_label = roman_token
+                active_page = page_number
+                body_text, marks = extract_marks(roman_match.group(3).strip())
+                if body_text:
+                    active_lines.append(body_text)
                 if marks is not None:
                     active_marks = marks
                     flush_leaf(force_keep=True)
                 continue
 
-        # 4. Sub-question "(a)", "(b)", "a)" (also handles documents starting directly with "(a)" without "1.")
-        m_sub = SUB_Q_RE.match(text)
-        if m_sub:
-            letter_tok = (m_sub.group(1) or m_sub.group(2)).lower()
-            if parent_num is None and letter_tok == "a":
-                parent_num = "1"
-            if parent_num is not None:
+        sub_match = SUB_QUESTION_RE.match(line_text)
+        if sub_match:
+            letter_token = (sub_match.group(1) or sub_match.group(2)).lower()
+            if parent_number is None and letter_token == "a":
+                parent_number = "1"
+            if parent_number is not None:
                 if active_lines and sub_label is None and not seen_parent_emitted_leaf:
                     combined_stem = join_lines_dehyphenate(active_lines)
                     _, stem_marks = extract_marks(combined_stem)
@@ -672,102 +613,101 @@ def parse_structured_questions(lines: list[dict], full_text: str) -> list[dict]:
                 else:
                     flush_leaf()
 
-                sub_label = letter_tok
+                sub_label = letter_token
                 sub_stem_lines = []
                 seen_sub_emitted_leaf = False
-                part_label = m_sub.group(3).lower() if m_sub.group(3) else None
-                active_page = page
-                body, marks = extract_marks(m_sub.group(4).strip())
-                if body:
-                    active_lines.append(body)
+                part_label = sub_match.group(3).lower() if sub_match.group(3) else None
+                active_page = page_number
+                body_text, marks = extract_marks(sub_match.group(4).strip())
+                if body_text:
+                    active_lines.append(body_text)
                 if marks is not None:
                     active_marks = marks
                     flush_leaf(force_keep=True)
                 continue
 
-        # 5. Continuation line inside an active question
-        if active_lines or parent_num is not None:
-            body, marks = extract_marks(text)
-            if body:
-                active_lines.append(body)
+        if active_lines or parent_number is not None:
+            body_text, marks = extract_marks(line_text)
+            if body_text:
+                active_lines.append(body_text)
             if marks is not None:
                 active_marks = marks
                 flush_leaf(force_keep=True)
         else:
-            # Standalone line outside numbered hierarchy that explicitly carries marks or question prompt
-            body, marks = extract_marks(text)
-            if marks is not None and len(body) >= 12:
+            body_text, marks = extract_marks(line_text)
+            if marks is not None and len(body_text) >= 12:
                 resolved_marks = max(1, min(25, marks))
-                topic_cat, rubric_kw = classify_topic_and_keywords(body)
+                topic_category, rubric_keywords = classify_topic_and_keywords(body_text)
                 questions.append(
                     {
-                        "prompt": body[:480],
+                        "prompt": body_text[:480],
                         "marks": resolved_marks,
                         "recommendedTimeSeconds": max(45, resolved_marks * 60),
-                        "topicCategory": topic_cat,
-                        "rubricKeywords": rubric_kw,
-                        "page": page,
+                        "topicCategory": topic_category,
+                        "rubricKeywords": rubric_keywords,
+                        "page": page_number,
                     }
                 )
 
     flush_leaf()
 
-    # Deduplicate near-identical prompts while preserving order
-    deduped: list[dict] = []
-    seen_prompts: set[str] = set()
-    for q in questions:
-        sig = re.sub(r"\W+", "", q["prompt"].lower())[:100]
-        if sig and sig not in seen_prompts:
-            seen_prompts.add(sig)
-            deduped.append(q)
+    deduped_questions: list[dict] = []
+    seen_signatures: set[str] = set()
+    for question in questions:
+        signature = re.sub(r"\W+", "", question["prompt"].lower())[:100]
+        if signature and signature not in seen_signatures:
+            seen_signatures.add(signature)
+            deduped_questions.append(question)
 
-    # Fallback 1: Unnumbered PDF containing direct questions (sentences ending in '?')
-    if not deduped and full_text.strip():
+    if not deduped_questions and full_text.strip():
         sentences = re.split(r"(?<=[\?\!])\s+|\n+", full_text)
-        for sent in sentences:
-            s = strip_answer_leaders(normalize_text(sent))
-            if s.endswith("?") and len(s) >= 15 and not is_noise_line(s):
-                cleaned, m = extract_marks(s)
-                resolved_marks = max(1, min(25, m or 2))
-                topic_cat, rubric_kw = classify_topic_and_keywords(cleaned)
-                deduped.append(
+        for sentence in sentences:
+            normalized_sentence = strip_answer_leaders(normalize_text(sentence))
+            if normalized_sentence.endswith("?") and len(normalized_sentence) >= 15 and not is_noise_line(normalized_sentence):
+                cleaned_prompt, found_marks = extract_marks(normalized_sentence)
+                resolved_marks = max(1, min(25, found_marks or 2))
+                topic_category, rubric_keywords = classify_topic_and_keywords(cleaned_prompt)
+                deduped_questions.append(
                     {
-                        "prompt": cleaned[:480],
+                        "prompt": cleaned_prompt[:480],
                         "marks": resolved_marks,
                         "recommendedTimeSeconds": max(45, resolved_marks * 60),
-                        "topicCategory": topic_cat,
-                        "rubricKeywords": rubric_kw,
+                        "topicCategory": topic_category,
+                        "rubricKeywords": rubric_keywords,
                     }
                 )
-            if len(deduped) >= 12:
+            if len(deduped_questions) >= 12:
                 break
 
-    # Fallback 2: General study notes / prose PDF with no explicit questions
-    if not deduped and full_text.strip():
+    if not deduped_questions and full_text.strip():
         paragraphs = [
-            normalize_text(p)
-            for p in re.split(r"\n\s*\n+", full_text)
-            if len(normalize_text(p)) >= 30 and not is_noise_line(normalize_text(p))
+            normalize_text(paragraph)
+            for paragraph in re.split(r"\n\s*\n+", full_text)
+            if len(normalize_text(paragraph)) >= 30 and not is_noise_line(normalize_text(paragraph))
         ]
         if not paragraphs:
-            flat = normalize_text(full_text)
-            paragraphs = [flat[i : i + 260].strip() for i in range(0, min(len(flat), 1300), 260) if flat[i : i + 260].strip()]
-        for idx, para in enumerate(paragraphs[:6], start=1):
-            snippet = para[:240] + ("..." if len(para) > 240 else "")
-            prompt_txt = f"Summarise and explain the key concepts from section {idx}: \"{snippet}\""
-            topic_cat, rubric_kw = classify_topic_and_keywords(para)
-            deduped.append(
+            flattened_text = normalize_text(full_text)
+            paragraphs = [
+                flattened_text[offset : offset + 260].strip()
+                for offset in range(0, min(len(flattened_text), 1300), 260)
+                if flattened_text[offset : offset + 260].strip()
+            ]
+        for section_index, paragraph in enumerate(paragraphs[:6], start=1):
+            snippet = paragraph[:240] + ("..." if len(paragraph) > 240 else "")
+            prompt_text = f'Summarise and explain the key concepts from section {section_index}: "{snippet}"'
+            topic_category, rubric_keywords = classify_topic_and_keywords(paragraph)
+            deduped_questions.append(
                 {
-                    "questionNumber": str(idx),
-                    "prompt": prompt_txt,
+                    "questionNumber": str(section_index),
+                    "prompt": prompt_text,
                     "marks": 3,
                     "recommendedTimeSeconds": 180,
-                    "topicCategory": topic_cat,
-                    "rubricKeywords": rubric_kw,
+                    "topicCategory": topic_category,
+                    "rubricKeywords": rubric_keywords,
                 }
             )
 
-    return deduped[:25]
+    return deduped_questions[:25]
 
 
 def analyze_geometry_payload(payload: dict) -> dict:
@@ -778,11 +718,11 @@ def analyze_geometry_payload(payload: dict) -> dict:
 
     image_count = int(payload.get("imageCount") or 0)
     lines = process_visual_lines(pages)
-    full_text = "\n".join(item["text"] for item in lines).strip()
+    full_text = "\n".join(line_entry["text"] for line_entry in lines).strip()
 
     if not full_text:
-        raw_pages = [normalize_text(p.get("rawText") or "") for p in pages]
-        full_text = "\n\n".join(t for t in raw_pages if t).strip()
+        raw_pages = [normalize_text(page_entry.get("rawText") or "") for page_entry in pages]
+        full_text = "\n\n".join(page_text for page_text in raw_pages if page_text).strip()
 
     needs_ocr = len(full_text) < 20 and image_count > 0
     raw_title = normalize_text(payload.get("title") or "")
@@ -798,61 +738,19 @@ def analyze_geometry_payload(payload: dict) -> dict:
     }
 
 
-def analyze_pdf(pdf_path: str) -> dict:
-    if pymupdf is None:
-        return {"error": "PyMuPDF is not available in this Python environment."}
-    if not os.path.exists(pdf_path):
-        return {"error": "Uploaded PDF file could not be found."}
-
-    doc = None
-    try:
-        doc = pymupdf.open(pdf_path)
-        if doc.needs_pass:
-            return {"error": "This PDF is password-protected. Please upload an unlocked PDF."}
-
-        page_count = len(doc)
-        if page_count == 0:
-            return {"error": "The uploaded PDF contains no pages."}
-
-        lines, image_count = extract_visual_lines(doc)
-        full_text = "\n".join(item["text"] for item in lines).strip()
-
-        # If layout filter stripped everything on an unusual tiny PDF, fall back to raw page text
-        if not full_text:
-            raw_pages = [normalize_text(p.get_text("text")) for p in doc]
-            full_text = "\n\n".join(t for t in raw_pages if t).strip()
-
-        needs_ocr = len(full_text) < 20 and image_count > 0
-        metadata = doc.metadata or {}
-        raw_title = normalize_text(metadata.get("title") or "")
-        questions = parse_structured_questions(lines, full_text) if full_text else []
-
-        return {
-            "title": raw_title,
-            "pageCount": page_count,
-            "characterCount": len(full_text),
-            "needsOcr": needs_ocr,
-            "extractedText": full_text,
-            "questions": questions,
-        }
-    except Exception as exc:
-        return {"error": f"PyMuPDF failed to parse PDF: {str(exc)}"}
-    finally:
-        if doc is not None:
-            doc.close()
-
-
 def main():
-    if len(sys.argv) >= 2 and sys.argv[1] == "--stdin-spans":
-        raw = sys.stdin.read()
-        payload = json.loads(raw or "{}")
-        result = analyze_geometry_payload(payload)
-    elif len(sys.argv) >= 2:
-        result = analyze_pdf(sys.argv[1])
-    else:
-        print(json.dumps({"error": "Missing PDF file path argument."}))
+    if len(sys.argv) < 2 or sys.argv[1] != "--stdin-spans":
+        print(json.dumps({"error": "Missing --stdin-spans argument."}))
         sys.exit(1)
 
+    try:
+        raw_input = sys.stdin.read()
+        payload = json.loads(raw_input or "{}")
+    except json.JSONDecodeError as decode_error:
+        print(json.dumps({"error": f"Invalid JSON geometry payload: {decode_error}"}))
+        sys.exit(1)
+
+    result = analyze_geometry_payload(payload)
     print(json.dumps(result, ensure_ascii=False))
     if "error" in result:
         sys.exit(1)

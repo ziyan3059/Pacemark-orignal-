@@ -1,39 +1,15 @@
-"use client";
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, CheckCircle2, Contrast, Minus, Plus, Save } from 'lucide-react';
 import { FluidButton } from './ui/fluid-button';
-import { CompletedPaperResult } from './PerformanceReport';
 import {
   calculateTopicWeakness,
   evaluateKeywordRubric,
   formatDurationCompact,
-  QuestionResponseLog,
   sanitizeAnswerText,
 } from '../lib/examEngine';
 
-export interface QuestionItem {
-  questionNumber?: string;
-  stemContext?: string;
-  prompt: string;
-  marks: number;
-  recommendedTimeSeconds?: number;
-  topicCategory?: string;
-  rubricKeywords?: string[];
-  page?: number;
-}
-
-export interface ActivePaper {
-  id: string;
-  title: string;
-  pageCount?: number;
-  extractedText?: string;
-  needsOcr?: boolean;
-  questions?: QuestionItem[];
-}
-
-const QUESTIONS_BY_PAPER: Record<string, QuestionItem[]> = {
+const QUESTIONS_BY_PAPER = {
   'paper-1': [
     {
       questionNumber: '1',
@@ -120,7 +96,7 @@ const QUESTIONS_BY_PAPER: Record<string, QuestionItem[]> = {
   ],
 };
 
-const DEFAULT_QUESTIONS: QuestionItem[] = [
+const DEFAULT_QUESTIONS = [
   {
     questionNumber: '1',
     prompt: 'Summarise the primary concept covered in the first section of this paper',
@@ -163,122 +139,105 @@ const DEFAULT_QUESTIONS: QuestionItem[] = [
   },
 ];
 
-interface PaperSessionProps {
-  paper: ActivePaper;
-  username?: string;
-  highContrast?: boolean;
-  onToggleHighContrast?: () => void;
-  onEndPaper: (result: CompletedPaperResult) => void;
-}
-
-interface DraftSnapshot {
-  answers: Record<number, string>;
-  confidenceRatings: Record<number, number>;
-  questionTimeMap: Record<number, number>;
-  currentIndex: number;
-  updatedAt: string;
-}
-
-export const PaperSession: React.FC<PaperSessionProps> = ({
+export const PaperSession = ({
   paper,
   username,
   highContrast = false,
   onToggleHighContrast,
+  onCancelPaper,
   onEndPaper,
 }) => {
-  const questions = useMemo<QuestionItem[]>(() => {
-    const raw =
-      paper.questions && paper.questions.length > 0
+  const questions = useMemo(() => {
+    const rawQuestions =
+      Array.isArray(paper?.questions) && paper.questions.length > 0
         ? paper.questions
-        : QUESTIONS_BY_PAPER[paper.id] || DEFAULT_QUESTIONS;
-    return raw.map((q) => ({
-      ...q,
-      topicCategory: q.topicCategory || 'General Specification',
-      recommendedTimeSeconds: q.recommendedTimeSeconds || Math.max(45, (q.marks || 2) * 60),
-      rubricKeywords: q.rubricKeywords || [],
+        : QUESTIONS_BY_PAPER[paper?.id] || (paper?.needsOcr ? [] : DEFAULT_QUESTIONS);
+    return rawQuestions.map((questionItem) => ({
+      ...questionItem,
+      topicCategory: questionItem.topicCategory || 'General Specification',
+      recommendedTimeSeconds:
+        questionItem.recommendedTimeSeconds || Math.max(45, (questionItem.marks || 2) * 60),
+      rubricKeywords: questionItem.rubricKeywords || [],
     }));
   }, [paper]);
 
-  const draftKey = useMemo(
+  const draftStorageKey = useMemo(
     () => `pacemark_exam_draft_${(username || 'guest').trim().toLowerCase()}_${paper.id}`,
     [username, paper.id],
   );
 
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [confidenceRatings, setConfidenceRatings] = useState<Record<number, number>>({});
-  const [questionTimeMap, setQuestionTimeMap] = useState<Record<number, number>>({});
-  const [displayActiveSeconds, setDisplayActiveSeconds] = useState<number>(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [confidenceRatings, setConfidenceRatings] = useState({});
+  const [questionTimeMap, setQuestionTimeMap] = useState({});
+  const [displayActiveSeconds, setDisplayActiveSeconds] = useState(0);
 
-  const [fontSizePx, setFontSizePx] = useState<number>(16);
-  const [showExtractedText, setShowExtractedText] = useState<boolean>(false);
-  const [isOffline, setIsOffline] = useState<boolean>(
+  const [fontSizePx, setFontSizePx] = useState(16);
+  const [showExtractedText, setShowExtractedText] = useState(false);
+  const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
   );
-  const [draftStatus, setDraftStatus] = useState<string>('');
-  const [announcement, setAnnouncement] = useState<string>('');
+  const [draftStatus, setDraftStatus] = useState('');
+  const [announcement, setAnnouncement] = useState('');
 
-  const [stage, setStage] = useState<'exam' | 'review'>('exam');
-  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
-  const [reviewMarks, setReviewMarks] = useState<Record<number, number>>({});
-  const [rubricMatches, setRubricMatches] = useState<
-    Record<number, { matched: string[]; missed: string[] }>
-  >({});
+  const [stage, setStage] = useState('exam');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [reviewMarks, setReviewMarks] = useState({});
+  const [rubricMatches, setRubricMatches] = useState({});
 
-  // Algorithm 1 Refs: accurate focus-anchored timestamp delta tracking
-  const currentIndexRef = useRef<number>(0);
-  const questionStartRef = useRef<number>(Date.now());
-  const timeMapRef = useRef<Record<number, number>>({});
-  const isPausedRef = useRef<boolean>(false);
+  const currentIndexRef = useRef(0);
+  const questionStartRef = useRef(Date.now());
+  const timeMapRef = useRef({});
+  const isPausedRef = useRef(false);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
-  // Restore saved local draft if present
   useEffect(() => {
+    if (questions.length === 0) return;
     try {
-      const raw = window.localStorage.getItem(draftKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<DraftSnapshot>;
-        if (parsed.answers && typeof parsed.answers === 'object') {
-          setAnswers(parsed.answers);
+      const savedRaw = window.localStorage.getItem(draftStorageKey);
+      if (savedRaw) {
+        const parsedDraft = JSON.parse(savedRaw);
+        if (parsedDraft.answers && typeof parsedDraft.answers === 'object') {
+          setAnswers(parsedDraft.answers);
         }
-        if (parsed.confidenceRatings && typeof parsed.confidenceRatings === 'object') {
-          setConfidenceRatings(parsed.confidenceRatings);
+        if (parsedDraft.confidenceRatings && typeof parsedDraft.confidenceRatings === 'object') {
+          setConfidenceRatings(parsedDraft.confidenceRatings);
         }
-        if (parsed.questionTimeMap && typeof parsed.questionTimeMap === 'object') {
-          timeMapRef.current = { ...parsed.questionTimeMap };
-          setQuestionTimeMap(parsed.questionTimeMap);
+        if (parsedDraft.questionTimeMap && typeof parsedDraft.questionTimeMap === 'object') {
+          timeMapRef.current = { ...parsedDraft.questionTimeMap };
+          setQuestionTimeMap(parsedDraft.questionTimeMap);
         }
         if (
-          typeof parsed.currentIndex === 'number' &&
-          parsed.currentIndex >= 0 &&
-          parsed.currentIndex < questions.length
+          typeof parsedDraft.currentIndex === 'number' &&
+          parsedDraft.currentIndex >= 0 &&
+          parsedDraft.currentIndex < questions.length
         ) {
-          setCurrentIndex(parsed.currentIndex);
-          currentIndexRef.current = parsed.currentIndex;
+          setCurrentIndex(parsedDraft.currentIndex);
+          currentIndexRef.current = parsedDraft.currentIndex;
         }
         setDraftStatus('Restored saved draft');
       }
-    } catch {
-      // Ignore corrupt draft storage
+    } catch (draftError) {
+      console.warn('Could not restore saved exam draft:', draftError);
+      setDraftStatus('Saved draft unreadable');
     }
     questionStartRef.current = Date.now();
-  }, [draftKey, questions.length]);
+  }, [draftStorageKey, questions.length]);
 
   const flushActiveQuestionTime = useCallback(() => {
     if (isPausedRef.current) return;
-    const now = Date.now();
-    const elapsedSec = Math.max(0, (now - questionStartRef.current) / 1000);
-    const qIdx = currentIndexRef.current;
-    const updated = (timeMapRef.current[qIdx] ?? 0) + elapsedSec;
-    timeMapRef.current = { ...timeMapRef.current, [qIdx]: updated };
-    questionStartRef.current = now;
+    const currentTimestamp = Date.now();
+    const elapsedSeconds = Math.max(0, (currentTimestamp - questionStartRef.current) / 1000);
+    const activeIndex = currentIndexRef.current;
+    const updatedDuration = (timeMapRef.current[activeIndex] ?? 0) + elapsedSeconds;
+    timeMapRef.current = { ...timeMapRef.current, [activeIndex]: updatedDuration };
+    questionStartRef.current = currentTimestamp;
     setQuestionTimeMap({ ...timeMapRef.current });
   }, []);
 
-  // Pause timing on tab/window blur or modal open; resume cleanly on focus
   useEffect(() => {
     const pauseTiming = () => {
       if (!isPausedRef.current) {
@@ -288,31 +247,30 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
     };
 
     const resumeTiming = () => {
-      if (stage !== 'exam' || showConfirmModal) return;
+      if (stage !== 'exam' || showConfirmModal || questions.length === 0) return;
       if (document.hidden) return;
       questionStartRef.current = Date.now();
       isPausedRef.current = false;
     };
 
-    const onVisibility = () => {
+    const handleVisibilityChange = () => {
       if (document.hidden) pauseTiming();
       else resumeTiming();
     };
 
     window.addEventListener('blur', pauseTiming);
     window.addEventListener('focus', resumeTiming);
-    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('blur', pauseTiming);
       window.removeEventListener('focus', resumeTiming);
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [flushActiveQuestionTime, stage, showConfirmModal]);
+  }, [flushActiveQuestionTime, stage, showConfirmModal, questions.length]);
 
-  // Pause timing whenever confirmation modal or self-mark review is active
   useEffect(() => {
-    if (stage !== 'exam' || showConfirmModal) {
+    if (stage !== 'exam' || showConfirmModal || questions.length === 0) {
       if (!isPausedRef.current) {
         flushActiveQuestionTime();
         isPausedRef.current = true;
@@ -321,98 +279,99 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
       questionStartRef.current = Date.now();
       isPausedRef.current = false;
     }
-  }, [stage, showConfirmModal, flushActiveQuestionTime]);
+  }, [stage, showConfirmModal, questions.length, flushActiveQuestionTime]);
 
-  // Lightweight UI tick to update total active elapsed time for the 4px subtle progress bar
   useEffect(() => {
-    const interval = setInterval(() => {
-      const accumulated = Object.values(timeMapRef.current).reduce((a, b) => a + b, 0);
-      const liveDelta = isPausedRef.current
+    const timerInterval = setInterval(() => {
+      const accumulatedSeconds = Object.values(timeMapRef.current).reduce(
+        (accumulator, seconds) => accumulator + seconds,
+        0,
+      );
+      const liveDeltaSeconds = isPausedRef.current
         ? 0
         : Math.max(0, (Date.now() - questionStartRef.current) / 1000);
-      setDisplayActiveSeconds(accumulated + liveDelta);
+      setDisplayActiveSeconds(accumulatedSeconds + liveDeltaSeconds);
     }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(timerInterval);
   }, []);
 
-  // Network online/offline listener (Test T05)
   useEffect(() => {
-    const goOffline = () => setIsOffline(true);
-    const goOnline = () => setIsOffline(false);
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => setIsOffline(false);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
     return () => {
-      window.removeEventListener('offline', goOffline);
-      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
     };
   }, []);
 
-  // Latest state ref for 5-second Auto-Save Draft Engine
   const latestDraftRef = useRef({ answers, confidenceRatings, currentIndex });
   useEffect(() => {
     latestDraftRef.current = { answers, confidenceRatings, currentIndex };
   }, [answers, confidenceRatings, currentIndex]);
 
   const persistDraftNow = useCallback(() => {
-    if (stage !== 'exam') return;
+    if (stage !== 'exam' || questions.length === 0) return;
     try {
-      const snapshot: DraftSnapshot = {
+      const draftSnapshot = {
         answers: latestDraftRef.current.answers,
         confidenceRatings: latestDraftRef.current.confidenceRatings,
         questionTimeMap: timeMapRef.current,
         currentIndex: latestDraftRef.current.currentIndex,
         updatedAt: new Date().toISOString(),
       };
-      window.localStorage.setItem(draftKey, JSON.stringify(snapshot));
-      const hhmm = new Date().toLocaleTimeString('en-GB', {
+      window.localStorage.setItem(draftStorageKey, JSON.stringify(draftSnapshot));
+      const timeLabel = new Date().toLocaleTimeString('en-GB', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
       });
-      setDraftStatus(`Auto-saved · ${hhmm}`);
-    } catch {
-      // Ignore storage quota errors
+      setDraftStatus(`Auto-saved · ${timeLabel}`);
+    } catch (storageError) {
+      console.warn('Auto-save draft failed:', storageError);
+      setDraftStatus('Auto-save unavailable (storage blocked or full)');
     }
-  }, [draftKey, stage]);
+  }, [draftStorageKey, stage, questions.length]);
 
   useEffect(() => {
-    if (stage !== 'exam') return;
-    const autoTimer = setInterval(persistDraftNow, 5000);
+    if (stage !== 'exam' || questions.length === 0) return;
+    const autoSaveTimer = setInterval(persistDraftNow, 5000);
     return () => {
-      clearInterval(autoTimer);
+      clearInterval(autoSaveTimer);
     };
-  }, [persistDraftNow, stage]);
+  }, [persistDraftNow, stage, questions.length]);
 
-  // Algorithm 1 switchQuestion: flush delta on current question, switch pointer, reset anchor
   const switchQuestion = useCallback(
-    (nextIndex: number) => {
-      const clamped = Math.max(0, Math.min(questions.length - 1, nextIndex));
-      if (clamped === currentIndexRef.current) return;
+    (nextIndex) => {
+      if (questions.length === 0) return;
+      const clampedIndex = Math.max(0, Math.min(questions.length - 1, nextIndex));
+      if (clampedIndex === currentIndexRef.current) return;
       flushActiveQuestionTime();
-      currentIndexRef.current = clamped;
-      setCurrentIndex(clamped);
+      currentIndexRef.current = clampedIndex;
+      setCurrentIndex(clampedIndex);
       questionStartRef.current = Date.now();
       setAnnouncement(
-        `Moved to question ${clamped + 1} of ${questions.length}`,
+        `Moved to question ${clampedIndex + 1} of ${questions.length}`,
       );
       persistDraftNow();
     },
     [flushActiveQuestionTime, persistDraftNow, questions.length],
   );
 
-  // Keyboard-First Navigation: Alt+N (Next), Alt+P (Previous)
+  // Keyboard shortcuts Alt+N (next) and Alt+P (previous) keep focus inside the answer box
   useEffect(() => {
-    if (stage !== 'exam' || showConfirmModal) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key === 'n') {
-        e.preventDefault();
+    if (stage !== 'exam' || showConfirmModal || questions.length === 0) return;
+    const handleKeyDown = (keyboardEvent) => {
+      if (!keyboardEvent.altKey) return;
+      const pressedKey = keyboardEvent.key.toLowerCase();
+      if (pressedKey === 'n') {
+        keyboardEvent.preventDefault();
         if (currentIndexRef.current < questions.length - 1) {
           switchQuestion(currentIndexRef.current + 1);
         }
-      } else if (key === 'p') {
-        e.preventDefault();
+      } else if (pressedKey === 'p') {
+        keyboardEvent.preventDefault();
         if (currentIndexRef.current > 0) {
           switchQuestion(currentIndexRef.current - 1);
         }
@@ -425,7 +384,9 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
   const totalRecommendedSeconds = useMemo(
     () =>
       questions.reduce(
-        (sum, q) => sum + (q.recommendedTimeSeconds || Math.max(45, (q.marks || 2) * 60)),
+        (accumulator, question) =>
+          accumulator +
+          (question.recommendedTimeSeconds || Math.max(45, (question.marks || 2) * 60)),
         0,
       ),
     [questions],
@@ -435,7 +396,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
     100,
     Math.max(0, (displayActiveSeconds / Math.max(60, totalRecommendedSeconds)) * 100),
   );
-  const answeredCount = Object.values(answers).filter((a) => a.trim().length > 0).length;
+  const answeredCount = Object.values(answers).filter((answerText) => answerText.trim().length > 0).length;
   const currentQuestion = questions[currentIndex];
   const currentAnswer = answers[currentIndex] ?? '';
   const currentConfidence = confidenceRatings[currentIndex] ?? 3;
@@ -448,118 +409,139 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
 
   const handleConfirmFinishToReview = () => {
     setShowConfirmModal(false);
-    // Pre-populate keyword rubric auto-marks for every question
-    const initialMarks: Record<number, number> = {};
-    const matchesMap: Record<number, { matched: string[]; missed: string[] }> = {};
+    const suggestedMarks = {};
+    const matchedKeywordsMap = {};
 
-    questions.forEach((q, idx) => {
-      const clean = sanitizeAnswerText(answers[idx] ?? '');
-      const evalRes = evaluateKeywordRubric(clean, q.marks || 2, q.rubricKeywords || []);
-      initialMarks[idx] = evalRes.marksAwarded;
-      matchesMap[idx] = {
-        matched: evalRes.matchedKeywords,
-        missed: evalRes.missedKeywords,
+    questions.forEach((question, questionIndex) => {
+      const cleanAnswer = sanitizeAnswerText(answers[questionIndex] ?? '');
+      const rubricEvaluation = evaluateKeywordRubric(
+        cleanAnswer,
+        question.marks || 2,
+        question.rubricKeywords || [],
+      );
+      suggestedMarks[questionIndex] = rubricEvaluation.marksAwarded;
+      matchedKeywordsMap[questionIndex] = {
+        matched: rubricEvaluation.matchedKeywords,
+        missed: rubricEvaluation.missedKeywords,
       };
     });
 
-    setReviewMarks(initialMarks);
-    setRubricMatches(matchesMap);
+    setReviewMarks(suggestedMarks);
+    setRubricMatches(matchedKeywordsMap);
     setStage('review');
     setAnnouncement('Paper paused for self-mark review.');
     window.scrollTo(0, 0);
   };
 
   const handleFinalizeReport = () => {
-    const nowIso = new Date().toISOString();
-    const id = `result-${Date.now()}`;
+    const completedIso = new Date().toISOString();
+    const resultId = `result-${Date.now()}`;
 
-    const questionLogs: QuestionResponseLog[] = questions.map((q, idx) => {
-      const cleanAnswer = sanitizeAnswerText(answers[idx] ?? '');
-      const totalMarks = Math.max(1, q.marks || 2);
-      const awarded = Math.max(0, Math.min(totalMarks, reviewMarks[idx] ?? 0));
-      const timeSpentSeconds = Math.max(1, Math.round(timeMapRef.current[idx] ?? 0));
-      const recSeconds = q.recommendedTimeSeconds || totalMarks * 60;
-      const conf = confidenceRatings[idx] ?? 3;
+    const questionLogs = questions.map((question, questionIndex) => {
+      const cleanAnswer = sanitizeAnswerText(answers[questionIndex] ?? '');
+      const totalMarks = Math.max(1, question.marks || 2);
+      const awardedMarks = Math.max(0, Math.min(totalMarks, reviewMarks[questionIndex] ?? 0));
+      const timeSpentSeconds = Math.max(1, Math.round(timeMapRef.current[questionIndex] ?? 0));
+      const recommendedSeconds = question.recommendedTimeSeconds || totalMarks * 60;
+      const confidence = confidenceRatings[questionIndex] ?? 3;
 
       return {
-        questionIndex: idx,
-        questionNumber: q.questionNumber || String(idx + 1),
-        prompt: q.prompt,
-        topicCategory: q.topicCategory || 'General Specification',
+        questionIndex,
+        questionNumber: question.questionNumber || String(questionIndex + 1),
+        prompt: question.prompt,
+        topicCategory: question.topicCategory || 'General Specification',
         answerText: cleanAnswer,
-        marksAwarded: awarded,
+        marksAwarded: awardedMarks,
         totalMarks,
         timeSpentSeconds,
-        recommendedTimeSeconds: recSeconds,
-        confidence: conf,
-        matchedKeywords: rubricMatches[idx]?.matched || [],
-        missedKeywords: rubricMatches[idx]?.missed || [],
+        recommendedTimeSeconds: recommendedSeconds,
+        confidence,
+        matchedKeywords: rubricMatches[questionIndex]?.matched || [],
+        missedKeywords: rubricMatches[questionIndex]?.missed || [],
       };
     });
 
     const topicBreakdown = calculateTopicWeakness(questionLogs);
 
-    const totalMarksAwarded = questionLogs.reduce((s, q) => s + q.marksAwarded, 0);
-    const totalMarksPossible = questionLogs.reduce((s, q) => s + q.totalMarks, 0);
+    const totalMarksAwarded = questionLogs.reduce(
+      (accumulator, questionLog) => accumulator + questionLog.marksAwarded,
+      0,
+    );
+    const totalMarksPossible = questionLogs.reduce(
+      (accumulator, questionLog) => accumulator + questionLog.totalMarks,
+      0,
+    );
     const scorePercent = Math.round(
       (totalMarksAwarded / Math.max(1, totalMarksPossible)) * 100,
     );
 
-    const totalTimeSpent = questionLogs.reduce((s, q) => s + q.timeSpentSeconds, 0);
-    const avgSec = Math.round(totalTimeSpent / Math.max(1, questionLogs.length));
+    const totalTimeSpent = questionLogs.reduce(
+      (accumulator, questionLog) => accumulator + questionLog.timeSpentSeconds,
+      0,
+    );
+    const averageSeconds = Math.round(totalTimeSpent / Math.max(1, questionLogs.length));
 
-    // Populate legacy topicScores object alongside full topicBreakdown for compatibility
-    const findTopicScore = (keyword: string, fallback: number) => {
-      const match = topicBreakdown.find((t) =>
-        t.topic.toLowerCase().includes(keyword.toLowerCase()),
-      );
-      return match ? match.scorePercent : fallback;
-    };
-
-    const weakest = topicBreakdown[0];
-    const summary = weakest
-      ? `Scored ${totalMarksAwarded}/${totalMarksPossible} marks (${scorePercent}%). Top revision priority: ${weakest.topic} (${weakest.status}, ${weakest.scorePercent}% accuracy at ${weakest.timeRatioPercent}% of target time).`
+    const weakestTopic = topicBreakdown[0];
+    const summaryText = weakestTopic
+      ? `Scored ${totalMarksAwarded}/${totalMarksPossible} marks (${scorePercent}%). Top revision priority: ${weakestTopic.topic} (${weakestTopic.status}, ${weakestTopic.scorePercent}% accuracy at ${weakestTopic.timeRatioPercent}% of target time).`
       : `Scored ${scorePercent}% across ${questions.length} questions.`;
 
     try {
-      window.localStorage.removeItem(draftKey);
-    } catch {
-      // Ignore cleanup error
+      window.localStorage.removeItem(draftStorageKey);
+    } catch (storageError) {
+      console.warn('Unable to clear completed exam draft from localStorage:', storageError);
     }
 
     onEndPaper({
-      id,
+      id: resultId,
       paperTitle: paper.title,
       scorePercent,
-      avgTimeLabel: formatDurationCompact(avgSec),
-      completedAt: nowIso,
+      avgTimeLabel: formatDurationCompact(averageSeconds),
+      completedAt: completedIso,
       questionsAnswered: answeredCount,
       totalQuestions: questions.length,
-      summary,
-      topicScores: {
-        computerSystems: findTopicScore('Computer Systems', scorePercent),
-        dataStructures: findTopicScore('Data Structures', scorePercent),
-        softwareEngineering: findTopicScore('Software', scorePercent),
-      },
+      summary: summaryText,
       topicBreakdown,
       questionLogs,
     });
   };
 
-  const containerSurface = highContrast
-    ? 'bg-white border-2 border-neutral-950 text-black shadow-none'
-    : 'bg-white/75 dark:bg-[#1C1C1E]/75 backdrop-blur-2xl border border-white/80 dark:border-white/10 text-neutral-950 dark:text-neutral-50 shadow-[0_20px_50px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.85)]';
+  const containerSurfaceClass = highContrast
+    ? 'bg-white border-2 border-black text-black shadow-none'
+    : 'bg-white/90 backdrop-blur-2xl border border-black/10 text-[#1D1D1F] shadow-[0_20px_50px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.95)]';
 
-  const headerSurface = highContrast
-    ? 'bg-black border border-black text-white'
-    : 'bg-[#1D1D1F]/90 dark:bg-white/15 backdrop-blur-xl border border-white/20 text-white shadow-sm';
+  const headerSurfaceClass = highContrast
+    ? 'bg-black border-2 border-black text-white'
+    : 'bg-[#1D1D1F] border border-black/15 text-white shadow-sm';
+
+  if (questions.length === 0) {
+    return (
+      <section className="relative pt-10 pb-20 px-6 w-full max-w-4xl mx-auto">
+        <div className={`w-full rounded-[32px] p-8 sm:p-12 text-center ${containerSurfaceClass}`}>
+          <h1 className="text-xl font-bold tracking-tight mb-2">
+            No Selectable Questions Available
+          </h1>
+          <p className={`text-sm mb-6 ${highContrast ? 'text-black' : 'text-[#48484A]'}`}>
+            This PDF could not be split into selectable questions because it contains scanned images rather than digital text.
+          </p>
+          <FluidButton
+            variant="primary"
+            size="md"
+            highContrast={highContrast}
+            onClick={() => onCancelPaper?.()}
+          >
+            Back to Papers
+          </FluidButton>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
       className="relative pt-10 pb-20 px-6 w-full max-w-4xl mx-auto"
       aria-label="Exam session workspace"
     >
-      {/* Screen-reader polite status announcements */}
       <div className="sr-only" aria-live="polite">
         {announcement}
       </div>
@@ -568,23 +550,22 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className={`w-full rounded-[32px] p-6 sm:p-10 transition-colors ${containerSurface}`}
+        className={`w-full rounded-[32px] p-6 sm:p-10 transition-colors ${containerSurfaceClass}`}
       >
-        {/* Top Apple Translucent Header Bar + Subtle Progress Bar */}
-        <div className={`relative w-full rounded-2xl overflow-hidden mb-5 ${headerSurface}`}>
+        <div className={`relative w-full rounded-2xl overflow-hidden mb-5 ${headerSurfaceClass}`}>
           <div className="px-5 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-baseline gap-3 min-w-0">
-              <span className="text-sm sm:text-base font-bold font-mono tabular-nums whitespace-nowrap shrink-0">
+              <span className="text-sm sm:text-base font-bold font-mono tabular-nums whitespace-nowrap shrink-0 text-white">
                 {stage === 'exam'
                   ? `Q ${currentIndex + 1}/${questions.length}`
                   : 'Self-Mark Review'}
               </span>
-              <span className="text-xs sm:text-sm text-white/85 truncate">
+              <span className="text-xs sm:text-sm text-white/90 truncate">
                 {paper.title}
               </span>
             </div>
 
-            <div className="flex items-center gap-4 text-xs sm:text-sm font-medium text-white/90 font-mono tabular-nums shrink-0">
+            <div className="flex items-center gap-4 text-xs sm:text-sm font-medium text-white font-mono tabular-nums shrink-0">
               <span>
                 {answeredCount}/{questions.length} answered
               </span>
@@ -592,9 +573,8 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
             </div>
           </div>
 
-          {/* Horizontal 3px Subtle Progress Bar */}
           <div
-            className="w-full h-[3px] bg-white/20 overflow-hidden"
+            className="w-full h-[3px] bg-white/25 overflow-hidden"
             role="progressbar"
             aria-label="Exam pacing progress"
             aria-valuemin={0}
@@ -608,23 +588,29 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
           </div>
         </div>
 
-        {/* Accessibility & Draft Status Control Strip */}
         <div
           className={`flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b ${
-            highContrast ? 'border-neutral-900' : 'border-black/10'
+            highContrast ? 'border-black' : 'border-black/10'
           }`}
         >
           <div className="flex flex-wrap items-center gap-4">
-            {/* Scalable Text Control (14px-24px) */}
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold whitespace-nowrap text-neutral-600 dark:text-neutral-400">
+              <span
+                className={`text-xs font-semibold whitespace-nowrap ${
+                  highContrast ? 'text-black' : 'text-[#48484A]'
+                }`}
+              >
                 Text Size
               </span>
               <button
                 type="button"
                 aria-label="Decrease text size"
-                onClick={() => setFontSizePx((s) => Math.max(14, s - 2))}
-                className="p-1.5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] active:scale-95 transition-all cursor-pointer"
+                onClick={() => setFontSizePx((currentSize) => Math.max(14, currentSize - 2))}
+                className={`p-1.5 rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] active:scale-95 transition-all cursor-pointer ${
+                  highContrast
+                    ? 'border-2 border-black text-black bg-white hover:bg-neutral-200'
+                    : 'border-black/15 text-[#1D1D1F] bg-white hover:bg-neutral-100'
+                }`}
               >
                 <Minus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
@@ -634,33 +620,40 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                 max={24}
                 step={1}
                 value={fontSizePx}
-                onChange={(e) => setFontSizePx(Number(e.target.value))}
+                onChange={(event) => setFontSizePx(Number(event.target.value))}
                 aria-label="Adjust exam text size from 14px to 24px"
-                className="w-20 accent-[#0071E3] cursor-pointer"
+                className="w-20 accent-[#005BB5] cursor-pointer"
               />
               <button
                 type="button"
                 aria-label="Increase text size"
-                onClick={() => setFontSizePx((s) => Math.min(24, s + 2))}
-                className="p-1.5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] active:scale-95 transition-all cursor-pointer"
+                onClick={() => setFontSizePx((currentSize) => Math.min(24, currentSize + 2))}
+                className={`p-1.5 rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] active:scale-95 transition-all cursor-pointer ${
+                  highContrast
+                    ? 'border-2 border-black text-black bg-white hover:bg-neutral-200'
+                    : 'border-black/15 text-[#1D1D1F] bg-white hover:bg-neutral-100'
+                }`}
               >
                 <Plus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
-              <span className="text-xs font-mono tabular-nums font-semibold w-9 text-neutral-700 dark:text-neutral-300">
+              <span
+                className={`text-xs font-mono tabular-nums font-semibold w-9 ${
+                  highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                }`}
+              >
                 {fontSizePx}px
               </span>
             </div>
 
-            {/* High-Contrast Toggle (T06) */}
             {onToggleHighContrast && (
               <button
                 type="button"
                 aria-pressed={highContrast}
                 onClick={onToggleHighContrast}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] ${
                   highContrast
-                    ? 'bg-black text-white border-black'
-                    : 'bg-black/[0.04] dark:bg-white/[0.08] border-black/10 dark:border-white/10 text-neutral-800 dark:text-neutral-200 hover:bg-black/[0.08] dark:hover:bg-white/[0.12]'
+                    ? 'bg-black text-white border-2 border-black'
+                    : 'bg-black/[0.05] border border-black/12 text-[#1D1D1F] hover:bg-black/[0.09]'
                 }`}
               >
                 <Contrast className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -671,19 +664,24 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
 
           <div
             aria-live="polite"
-            className="flex items-center gap-2 text-xs font-mono tabular-nums text-neutral-500 dark:text-neutral-400"
+            className={`flex items-center gap-2 text-xs font-mono tabular-nums ${
+              highContrast ? 'text-black font-semibold' : 'text-[#48484A]'
+            }`}
           >
-            <Save className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden="true" />
+            <Save className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span>{draftStatus || 'Auto-save ready (5s)'}</span>
           </div>
         </div>
 
-        {/* Network Offline Warning Banner (Test T05) */}
         {isOffline && (
           <div
             role="alert"
             aria-live="assertive"
-            className="mb-6 flex items-start gap-2.5 rounded-2xl bg-[#FF9500]/10 border border-[#FF9500]/30 px-4 py-3 text-xs sm:text-sm font-semibold text-[#FF9500]"
+            className={`mb-6 flex items-start gap-2.5 rounded-2xl px-4 py-3 text-xs sm:text-sm font-semibold ${
+              highContrast
+                ? 'bg-white border-2 border-black text-black'
+                : 'bg-[#FEF3C7] border border-[#F59E0B] text-[#92400E]'
+            }`}
           >
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span>
@@ -694,10 +692,13 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
 
         {stage === 'exam' ? (
           <>
-            {/* Question Header & High-Contrast Mark Badge */}
             <div className="mb-5">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-                <p className="text-sm font-semibold tracking-tight text-neutral-500 dark:text-neutral-400">
+                <p
+                  className={`text-sm font-semibold tracking-tight ${
+                    highContrast ? 'text-black' : 'text-[#48484A]'
+                  }`}
+                >
                   {currentQuestion.questionNumber
                     ? `Question ${currentQuestion.questionNumber}`
                     : `Question ${currentIndex + 1}`}{' '}
@@ -705,12 +706,11 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                   <span>{currentQuestion.topicCategory}</span>
                 </p>
 
-                {/* High-Contrast Mark & Target Time Badge (Criterion 4 #8) */}
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold font-mono tabular-nums whitespace-nowrap shrink-0 ${
                     highContrast
-                      ? 'bg-black text-white'
-                      : 'bg-[#1D1D1F] dark:bg-white/15 text-white shadow-xs'
+                      ? 'bg-black text-white border border-black'
+                      : 'bg-[#1D1D1F] text-white shadow-xs'
                   }`}
                 >
                   {currentQuestion.marks} {currentQuestion.marks === 1 ? 'Mark' : 'Marks'} · Target{' '}
@@ -725,8 +725,8 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                   style={{ fontSize: `${Math.max(14, fontSizePx - 1)}px` }}
                   className={`leading-relaxed mb-3 rounded-2xl px-4 py-3 ${
                     highContrast
-                      ? 'bg-neutral-100 border border-neutral-900 text-black'
-                      : 'bg-black/[0.03] dark:bg-white/[0.04] text-neutral-800 dark:text-neutral-200'
+                      ? 'bg-white border-2 border-black text-black'
+                      : 'bg-[#F2F4F8] border border-black/8 text-[#1D1D1F]'
                   }`}
                 >
                   {currentQuestion.stemContext}
@@ -735,41 +735,55 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
 
               <p
                 style={{ fontSize: `${fontSizePx + 1}px` }}
-                className="font-bold tracking-tight text-[#1D1D1F] dark:text-[#F5F5F7] leading-relaxed"
+                className={`font-bold tracking-tight leading-relaxed ${
+                  highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                }`}
               >
                 {currentQuestion.prompt}
               </p>
             </div>
 
-            {/* Optional Extracted PDF Text Drawer */}
             {paper.extractedText && (
               <div className="mb-5">
                 <button
                   type="button"
                   onClick={() => setShowExtractedText((prev) => !prev)}
-                  className="text-xs sm:text-sm font-semibold text-[#0071E3] hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] rounded-md px-1"
+                  className={`text-xs sm:text-sm font-semibold hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] rounded-md px-1 ${
+                    highContrast ? 'text-black underline' : 'text-[#005BB5]'
+                  }`}
                 >
                   {showExtractedText ? 'Hide extracted PDF text' : 'View extracted PDF text'}
                 </button>
 
                 {showExtractedText && (
-                  <pre className="mt-2.5 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/8 dark:border-white/10 p-4 text-xs text-neutral-800 dark:text-neutral-200 font-mono leading-relaxed">
+                  <pre
+                    className={`mt-2.5 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-2xl p-4 text-xs font-mono leading-relaxed ${
+                      highContrast
+                        ? 'bg-white border-2 border-black text-black'
+                        : 'bg-[#F2F4F8] border border-black/10 text-[#1D1D1F]'
+                    }`}
+                  >
                     {paper.extractedText}
                   </pre>
                 )}
               </div>
             )}
 
-            {/* Answer Textarea (Scaled fontSizePx, sanitized, accepts 500+ chars cleanly) */}
             <div className="mb-6">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <label
                   htmlFor={`answer-q-${currentIndex}`}
-                  className="text-xs font-semibold text-neutral-700"
+                  className={`text-xs font-semibold ${
+                    highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                  }`}
                 >
                   Your Response
                 </label>
-                <span className="text-xs font-mono tabular-nums text-neutral-600">
+                <span
+                  className={`text-xs font-mono tabular-nums ${
+                    highContrast ? 'text-black font-semibold' : 'text-[#48484A]'
+                  }`}
+                >
                   {currentAnswer.length} chars · Q time:{' '}
                   {formatDurationCompact(questionTimeMap[currentIndex] ?? 0)}
                 </span>
@@ -778,11 +792,11 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <textarea
                 id={`answer-q-${currentIndex}`}
                 value={currentAnswer}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onChange={(event) => {
+                  const answerValue = event.target.value;
                   setAnswers((prev) => ({
                     ...prev,
-                    [currentIndex]: val,
+                    [currentIndex]: answerValue,
                   }));
                 }}
                 aria-label={`Answer for Question ${currentQuestion.questionNumber || currentIndex + 1}`}
@@ -791,19 +805,26 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                 style={{ fontSize: `${fontSizePx}px` }}
                 className={`w-full rounded-2xl p-5 leading-relaxed outline-none resize-y transition-all ${
                   highContrast
-                    ? 'bg-white border-2 border-neutral-950 text-black placeholder:text-neutral-600 focus:ring-2 focus:ring-[#0071E3]'
-                    : 'bg-black/[0.03] dark:bg-white/[0.05] border border-black/8 dark:border-white/10 text-neutral-950 dark:text-neutral-50 placeholder:text-neutral-400 focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 focus:bg-white dark:focus:bg-[#1C1C1E]'
+                    ? 'bg-white border-2 border-black text-black placeholder:text-neutral-700 focus:ring-2 focus:ring-[#005BB5]'
+                    : 'bg-[#F2F4F8] border border-black/12 text-[#1D1D1F] placeholder:text-[#636366] focus:border-[#005BB5] focus:ring-2 focus:ring-[#005BB5]/20 focus:bg-white'
                 }`}
               />
             </div>
 
-            {/* Confidence Rating Selector (1 to 5, Criterion 5) */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-6 mb-6 border-b border-black/[0.06] dark:border-white/[0.08]">
+            <div
+              className={`flex flex-wrap items-center justify-between gap-4 pb-6 mb-6 border-b ${
+                highContrast ? 'border-black' : 'border-black/10'
+              }`}
+            >
               <div>
-                <span className="text-xs sm:text-sm font-semibold tracking-tight text-[#1D1D1F] dark:text-[#F5F5F7] block">
+                <span
+                  className={`text-xs sm:text-sm font-semibold tracking-tight block ${
+                    highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                  }`}
+                >
                   Confidence Rating
                 </span>
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                <span className={`text-xs ${highContrast ? 'text-black' : 'text-[#48484A]'}`}>
                   1 (Unsure) to 5 (Confident)
                 </span>
               </div>
@@ -828,12 +849,14 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                           [currentIndex]: rating,
                         }))
                       }
-                      className={`w-9 h-9 rounded-xl text-xs font-bold font-mono tabular-nums border transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071E3] ${
+                      className={`w-9 h-9 rounded-xl text-xs font-bold font-mono tabular-nums border transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] ${
                         selected
                           ? highContrast
-                            ? 'bg-black text-white border-black'
-                            : 'bg-[#0071E3] text-white border-[#0071E3] shadow-xs'
-                          : 'bg-black/[0.03] dark:bg-white/[0.06] text-neutral-800 dark:text-neutral-200 border-black/5 dark:border-white/10 hover:bg-black/[0.07] dark:hover:bg-white/[0.12]'
+                            ? 'bg-black text-white border-2 border-black'
+                            : 'bg-[#005BB5] text-white border-[#005BB5] shadow-xs'
+                          : highContrast
+                            ? 'bg-white text-black border-2 border-black hover:bg-neutral-200'
+                            : 'bg-[#F2F4F8] text-[#1D1D1F] border-black/12 hover:bg-black/[0.08]'
                       }`}
                     >
                       {rating}
@@ -843,12 +866,12 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               </div>
             </div>
 
-            {/* Bottom Navigation Row with Keyboard Shortcut Hints */}
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <FluidButton
                   variant="secondary"
                   size="md"
+                  highContrast={highContrast}
                   disabled={currentIndex === 0}
                   aria-label="Previous question (Alt+P)"
                   aria-keyshortcuts="Alt+P"
@@ -861,6 +884,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
                 <FluidButton
                   variant="secondary"
                   size="md"
+                  highContrast={highContrast}
                   disabled={currentIndex === questions.length - 1}
                   aria-label="Next question (Alt+N)"
                   aria-keyshortcuts="Alt+N"
@@ -878,6 +902,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <FluidButton
                 variant="primary"
                 size="md"
+                highContrast={highContrast}
                 aria-label="End paper and review marks"
                 onClick={handleOpenConfirmFinish}
               >
@@ -886,88 +911,138 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
             </div>
           </>
         ) : (
-          /* Self-Mark Review Step */
           <div className="space-y-6">
             <div>
-              <h2 className="text-xl font-bold tracking-tight">
+              <h2
+                className={`text-xl font-bold tracking-tight ${
+                  highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                }`}
+              >
                 Keyword Rubric &amp; Self-Mark Review
               </h2>
-              <p className="text-xs sm:text-sm text-neutral-700 mt-1">
+              <p
+                className={`text-xs sm:text-sm mt-1 ${
+                  highContrast ? 'text-black font-medium' : 'text-[#48484A]'
+                }`}
+              >
                 Review auto-suggested marks against rubric keywords and adjust before generating your Weakness Ranking report.
               </p>
             </div>
 
-            <div className="divide-y divide-black/10 border-t border-b border-black/10">
-              {questions.map((q, idx) => {
-                const maxMarks = Math.max(1, q.marks || 2);
-                const currentAwarded = reviewMarks[idx] ?? 0;
-                const timeSec = Math.max(1, Math.round(timeMapRef.current[idx] ?? 0));
-                const recSec = q.recommendedTimeSeconds || maxMarks * 60;
-                const cleanAnswer = sanitizeAnswerText(answers[idx] ?? '').trim();
-                const matched = rubricMatches[idx]?.matched || [];
-                const missed = rubricMatches[idx]?.missed || [];
+            <div
+              className={`divide-y border-t border-b ${
+                highContrast
+                  ? 'divide-black border-black'
+                  : 'divide-black/10 border-black/10'
+              }`}
+            >
+              {questions.map((question, questionIndex) => {
+                const maxMarks = Math.max(1, question.marks || 2);
+                const currentAwarded = reviewMarks[questionIndex] ?? 0;
+                const timeSpentSeconds = Math.max(1, Math.round(timeMapRef.current[questionIndex] ?? 0));
+                const recommendedSeconds = question.recommendedTimeSeconds || maxMarks * 60;
+                const cleanAnswer = sanitizeAnswerText(answers[questionIndex] ?? '').trim();
+                const matchedKeywords = rubricMatches[questionIndex]?.matched || [];
+                const missedKeywords = rubricMatches[questionIndex]?.missed || [];
 
                 return (
-                  <div key={idx} className="py-5 space-y-2.5">
+                  <div key={questionIndex} className="py-5 space-y-2.5">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <p className="text-sm sm:text-base font-bold">
-                        {q.questionNumber ? `Q${q.questionNumber}` : `Q${idx + 1}`}: {q.prompt}
+                      <p
+                        className={`text-sm sm:text-base font-bold ${
+                          highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                        }`}
+                      >
+                        {question.questionNumber ? `Q${question.questionNumber}` : `Q${questionIndex + 1}`}:{' '}
+                        {question.prompt}
                       </p>
-                      <span className="text-xs font-mono tabular-nums font-semibold text-neutral-700 shrink-0">
-                        {q.topicCategory} · Time: {formatDurationCompact(timeSec)} / Target{' '}
-                        {formatDurationCompact(recSec)}
+                      <span
+                        className={`text-xs font-mono tabular-nums font-semibold shrink-0 ${
+                          highContrast ? 'text-black' : 'text-[#48484A]'
+                        }`}
+                      >
+                        {question.topicCategory} · Time: {formatDurationCompact(timeSpentSeconds)} / Target{' '}
+                        {formatDurationCompact(recommendedSeconds)}
                       </span>
                     </div>
 
-                    <p className="text-xs sm:text-sm rounded-xl bg-black/[0.04] px-4 py-2.5 text-neutral-800 whitespace-pre-wrap">
+                    <p
+                      className={`text-xs sm:text-sm rounded-xl px-4 py-2.5 whitespace-pre-wrap ${
+                        highContrast
+                          ? 'bg-white border-2 border-black text-black'
+                          : 'bg-[#F2F4F8] border border-black/10 text-[#1D1D1F]'
+                      }`}
+                    >
                       {cleanAnswer || 'No response entered.'}
                     </p>
 
                     <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-                      <div className="text-xs text-neutral-700 space-y-0.5">
-                        {matched.length > 0 && (
-                          <p className="text-emerald-800 font-medium">
+                      <div className="text-xs space-y-0.5">
+                        {matchedKeywords.length > 0 && (
+                          <p
+                            className={`font-semibold ${
+                              highContrast ? 'text-black' : 'text-[#15803D]'
+                            }`}
+                          >
                             <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />
-                            Matched concepts: {matched.join(', ')}
+                            Matched concepts: {matchedKeywords.join(', ')}
                           </p>
                         )}
-                        {missed.length > 0 && (
-                          <p className="text-neutral-600">
-                            Suggested rubric terms not detected: {missed.slice(0, 4).join(', ')}
+                        {missedKeywords.length > 0 && (
+                          <p className={highContrast ? 'text-black' : 'text-[#48484A]'}>
+                            Suggested rubric terms not detected: {missedKeywords.slice(0, 4).join(', ')}
                           </p>
                         )}
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-semibold">Marks Awarded:</span>
+                        <span
+                          className={`text-xs font-semibold ${
+                            highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                          }`}
+                        >
+                          Marks Awarded:
+                        </span>
                         <button
                           type="button"
-                          aria-label={`Decrease marks for question ${idx + 1}`}
+                          aria-label={`Decrease marks for question ${questionIndex + 1}`}
                           disabled={currentAwarded <= 0}
                           onClick={() =>
                             setReviewMarks((prev) => ({
                               ...prev,
-                              [idx]: Math.max(0, (prev[idx] ?? 0) - 1),
+                              [questionIndex]: Math.max(0, (prev[questionIndex] ?? 0) - 1),
                             }))
                           }
-                          className="p-1.5 rounded-lg border border-black/15 hover:bg-black/5 disabled:opacity-40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0055FF]"
+                          className={`p-1.5 rounded-lg disabled:opacity-40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] ${
+                            highContrast
+                              ? 'bg-white border-2 border-black text-black hover:bg-neutral-200'
+                              : 'bg-white border border-black/20 text-[#1D1D1F] hover:bg-neutral-100'
+                          }`}
                         >
                           <Minus className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
-                        <span className="text-sm font-bold font-mono tabular-nums min-w-[44px] text-center">
+                        <span
+                          className={`text-sm font-bold font-mono tabular-nums min-w-[44px] text-center ${
+                            highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                          }`}
+                        >
                           {currentAwarded}/{maxMarks}
                         </span>
                         <button
                           type="button"
-                          aria-label={`Increase marks for question ${idx + 1}`}
+                          aria-label={`Increase marks for question ${questionIndex + 1}`}
                           disabled={currentAwarded >= maxMarks}
                           onClick={() =>
                             setReviewMarks((prev) => ({
                               ...prev,
-                              [idx]: Math.min(maxMarks, (prev[idx] ?? 0) + 1),
+                              [questionIndex]: Math.min(maxMarks, (prev[questionIndex] ?? 0) + 1),
                             }))
                           }
-                          className="p-1.5 rounded-lg border border-black/15 hover:bg-black/5 disabled:opacity-40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0055FF]"
+                          className={`p-1.5 rounded-lg disabled:opacity-40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] ${
+                            highContrast
+                              ? 'bg-white border-2 border-black text-black hover:bg-neutral-200'
+                              : 'bg-white border border-black/20 text-[#1D1D1F] hover:bg-neutral-100'
+                          }`}
                         >
                           <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
@@ -982,6 +1057,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <FluidButton
                 variant="secondary"
                 size="md"
+                highContrast={highContrast}
                 onClick={() => setStage('exam')}
               >
                 Back to Paper
@@ -989,6 +1065,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <FluidButton
                 variant="primary"
                 size="md"
+                highContrast={highContrast}
                 onClick={handleFinalizeReport}
               >
                 Generate Performance Report
@@ -998,7 +1075,6 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
         )}
       </motion.div>
 
-      {/* Explicit Confirmation Modal (Criterion 4 #10) */}
       {showConfirmModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs px-6"
@@ -1006,11 +1082,21 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
           aria-modal="true"
           aria-labelledby="confirm-finish-title"
         >
-          <div className="w-full max-w-md rounded-2xl bg-white border border-black/15 shadow-xl p-6 sm:p-8 text-neutral-950">
+          <div
+            className={`w-full max-w-md rounded-2xl p-6 sm:p-8 ${
+              highContrast
+                ? 'bg-white border-2 border-black text-black shadow-none'
+                : 'bg-white border border-black/15 shadow-xl text-[#1D1D1F]'
+            }`}
+          >
             <h2 id="confirm-finish-title" className="text-lg font-bold tracking-tight mb-2">
               Confirm Finish Paper?
             </h2>
-            <p className="text-sm text-neutral-700 leading-relaxed mb-5 tabular-nums">
+            <p
+              className={`text-sm leading-relaxed mb-5 tabular-nums ${
+                highContrast ? 'text-black' : 'text-[#48484A]'
+              }`}
+            >
               You have answered <strong>{answeredCount}</strong> of{' '}
               <strong>{questions.length}</strong> questions in{' '}
               <strong>{formatDurationCompact(displayActiveSeconds)}</strong> active time.
@@ -1022,6 +1108,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <FluidButton
                 variant="secondary"
                 size="sm"
+                highContrast={highContrast}
                 onClick={() => setShowConfirmModal(false)}
               >
                 Continue Paper
@@ -1029,6 +1116,7 @@ export const PaperSession: React.FC<PaperSessionProps> = ({
               <FluidButton
                 variant="primary"
                 size="sm"
+                highContrast={highContrast}
                 onClick={handleConfirmFinishToReview}
               >
                 Confirm Finish
