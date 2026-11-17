@@ -384,7 +384,10 @@ export async function buildReportPdfWithPdfLib(payload) {
       const totalMarks = Math.max(1, Math.round(Number(questionEntry.totalMarks ?? questionEntry.marksAvailable ?? 1)));
       const timeSpentLabel = formatSeconds(questionEntry.timeSpentSeconds);
       const recommendedTimeLabel = formatSeconds(questionEntry.recommendedTimeSeconds ?? 60);
-      const confidenceScore = Math.max(1, Math.min(5, Math.round(Number(questionEntry.confidence ?? 3))));
+      const confidenceScore =
+        questionEntry.confidence == null
+          ? null
+          : Math.max(1, Math.min(5, Math.round(Number(questionEntry.confidence))));
 
       currentPage.drawText(`${questionLabel}: ${promptSnippet}`, {
         x: pageMargin + 6,
@@ -414,7 +417,7 @@ export async function buildReportPdfWithPdfLib(payload) {
         font: regularFont,
         color: rgb(0.08, 0.1, 0.15),
       });
-      currentPage.drawText(`${confidenceScore}/5`, {
+      currentPage.drawText(confidenceScore == null ? '-' : `${confidenceScore}/5`, {
         x: pageMargin + 465,
         y: pageHeight - (cursorTopY + 10),
         size: 8.2,

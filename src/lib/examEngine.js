@@ -36,7 +36,7 @@ export function evaluateKeywordRubric(answerText, totalMarks, rubricKeywords) {
     return {
       marksAwarded: 0,
       matchedKeywords: [],
-      missedKeywords: rubricKeywords,
+      missedKeywords: Array.isArray(rubricKeywords) ? rubricKeywords : [],
     };
   }
 

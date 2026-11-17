@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, CheckCircle2, Contrast, Minus, Plus, Save } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Contrast, Minus, Pause, Play, Plus, Save } from 'lucide-react';
 import { FluidButton } from './ui/fluid-button';
 import {
   calculateTopicWeakness,
@@ -96,49 +96,6 @@ const QUESTIONS_BY_PAPER = {
   ],
 };
 
-const DEFAULT_QUESTIONS = [
-  {
-    questionNumber: '1',
-    prompt: 'Summarise the primary concept covered in the first section of this paper',
-    marks: 2,
-    recommendedTimeSeconds: 120,
-    topicCategory: 'Computer Systems',
-    rubricKeywords: ['concept', 'system', 'process', 'purpose'],
-  },
-  {
-    questionNumber: '2',
-    prompt: 'Identify two key trade-offs discussed in the material and justify each',
-    marks: 4,
-    recommendedTimeSeconds: 240,
-    topicCategory: 'Data Structures & Algorithms',
-    rubricKeywords: ['advantage', 'disadvantage', 'efficiency', 'memory', 'speed'],
-  },
-  {
-    questionNumber: '3',
-    prompt: 'Explain the purpose of the Program Counter in Von Neumann architecture',
-    marks: 2,
-    recommendedTimeSeconds: 120,
-    topicCategory: 'Computer Systems',
-    rubricKeywords: ['address', 'next', 'instruction', 'increment'],
-  },
-  {
-    questionNumber: '4',
-    prompt: 'Outline a step-by-step approach to solving the core problem presented',
-    marks: 4,
-    recommendedTimeSeconds: 240,
-    topicCategory: 'Software & Programming',
-    rubricKeywords: ['input', 'process', 'validation', 'output', 'loop'],
-  },
-  {
-    questionNumber: '5',
-    prompt: 'Evaluate the final conclusion using evidence from the text',
-    marks: 3,
-    recommendedTimeSeconds: 180,
-    topicCategory: 'Software & Programming',
-    rubricKeywords: ['evidence', 'conclusion', 'impact', 'effective'],
-  },
-];
-
 export const PaperSession = ({
   paper,
   username,
@@ -151,14 +108,17 @@ export const PaperSession = ({
     const rawQuestions =
       Array.isArray(paper?.questions) && paper.questions.length > 0
         ? paper.questions
-        : QUESTIONS_BY_PAPER[paper?.id] || (paper?.needsOcr ? [] : DEFAULT_QUESTIONS);
-    return rawQuestions.map((questionItem) => ({
-      ...questionItem,
-      topicCategory: questionItem.topicCategory || 'General Specification',
-      recommendedTimeSeconds:
-        questionItem.recommendedTimeSeconds || Math.max(45, (questionItem.marks || 2) * 60),
-      rubricKeywords: questionItem.rubricKeywords || [],
-    }));
+        : QUESTIONS_BY_PAPER[paper?.id] || [];
+    return rawQuestions.map((questionItem) => {
+      const resolvedMarks = Math.max(1, Number(questionItem.marks) || 2);
+      return {
+        ...questionItem,
+        marks: resolvedMarks,
+        topicCategory: questionItem.topicCategory || 'General Specification',
+        recommendedTimeSeconds: resolvedMarks * 60,
+        rubricKeywords: questionItem.rubricKeywords || [],
+      };
+    });
   }, [paper]);
 
   const draftStorageKey = useMemo(
@@ -169,10 +129,11 @@ export const PaperSession = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [confidenceRatings, setConfidenceRatings] = useState({});
-  const [questionTimeMap, setQuestionTimeMap] = useState({});
   const [displayActiveSeconds, setDisplayActiveSeconds] = useState(0);
+  const [displayQuestionSeconds, setDisplayQuestionSeconds] = useState(0);
+  const [isTypingFocused, setIsTypingFocused] = useState(false);
+  const [confidenceNudgedIndex, setConfidenceNudgedIndex] = useState(null);
 
-  const [fontSizePx, setFontSizePx] = useState(16);
   const [showExtractedText, setShowExtractedText] = useState(false);
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
@@ -185,14 +146,33 @@ export const PaperSession = ({
   const [reviewMarks, setReviewMarks] = useState({});
   const [rubricMatches, setRubricMatches] = useState({});
 
+  const textareaRef = useRef(null);
   const currentIndexRef = useRef(0);
-  const questionStartRef = useRef(Date.now());
+  const questionStartRef = useRef(null);
   const timeMapRef = useRef({});
-  const isPausedRef = useRef(false);
+  const isTypingFocusedRef = useRef(false);
+  const isPausedRef = useRef(true);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
+
+  const computeLiveTotals = useCallback(() => {
+    const accumulatedTotal = Object.values(timeMapRef.current).reduce(
+      (accumulator, seconds) => accumulator + seconds,
+      0,
+    );
+    const activeIndex = currentIndexRef.current;
+    const accumulatedQuestion = timeMapRef.current[activeIndex] ?? 0;
+    const liveDelta =
+      isPausedRef.current || questionStartRef.current === null
+        ? 0
+        : Math.max(0, (Date.now() - questionStartRef.current) / 1000);
+    return {
+      totalElapsed: accumulatedTotal + liveDelta,
+      questionElapsed: accumulatedQuestion + liveDelta,
+    };
+  }, []);
 
   useEffect(() => {
     if (questions.length === 0) return;
@@ -208,7 +188,6 @@ export const PaperSession = ({
         }
         if (parsedDraft.questionTimeMap && typeof parsedDraft.questionTimeMap === 'object') {
           timeMapRef.current = { ...parsedDraft.questionTimeMap };
-          setQuestionTimeMap(parsedDraft.questionTimeMap);
         }
         if (
           typeof parsedDraft.currentIndex === 'number' &&
@@ -224,76 +203,83 @@ export const PaperSession = ({
       console.warn('Could not restore saved exam draft:', draftError);
       setDraftStatus('Saved draft unreadable');
     }
-    questionStartRef.current = Date.now();
-  }, [draftStorageKey, questions.length]);
+    const { totalElapsed, questionElapsed } = computeLiveTotals();
+    setDisplayActiveSeconds(totalElapsed);
+    setDisplayQuestionSeconds(questionElapsed);
+  }, [draftStorageKey, questions.length, computeLiveTotals]);
 
   const flushActiveQuestionTime = useCallback(() => {
-    if (isPausedRef.current) return;
+    if (isPausedRef.current || questionStartRef.current === null) return;
     const currentTimestamp = Date.now();
     const elapsedSeconds = Math.max(0, (currentTimestamp - questionStartRef.current) / 1000);
     const activeIndex = currentIndexRef.current;
     const updatedDuration = (timeMapRef.current[activeIndex] ?? 0) + elapsedSeconds;
     timeMapRef.current = { ...timeMapRef.current, [activeIndex]: updatedDuration };
     questionStartRef.current = currentTimestamp;
-    setQuestionTimeMap({ ...timeMapRef.current });
   }, []);
 
-  useEffect(() => {
-    const pauseTiming = () => {
-      if (!isPausedRef.current) {
-        flushActiveQuestionTime();
-        isPausedRef.current = true;
-      }
-    };
+  const syncTimerState = useCallback(() => {
+    const hasWindowFocus =
+      typeof document === 'undefined' ||
+      (!document.hidden && (typeof document.hasFocus !== 'function' || document.hasFocus()));
+    const canRun =
+      stage === 'exam' &&
+      !showConfirmModal &&
+      questions.length > 0 &&
+      isTypingFocusedRef.current &&
+      hasWindowFocus;
 
-    const resumeTiming = () => {
-      if (stage !== 'exam' || showConfirmModal || questions.length === 0) return;
-      if (document.hidden) return;
+    if (canRun && isPausedRef.current) {
       questionStartRef.current = Date.now();
       isPausedRef.current = false;
+    } else if (!canRun && !isPausedRef.current) {
+      flushActiveQuestionTime();
+      questionStartRef.current = null;
+      isPausedRef.current = true;
+    }
+
+    const { totalElapsed, questionElapsed } = computeLiveTotals();
+    setDisplayActiveSeconds(totalElapsed);
+    setDisplayQuestionSeconds(questionElapsed);
+  }, [stage, showConfirmModal, questions.length, flushActiveQuestionTime, computeLiveTotals]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      const stillInField =
+        textareaRef.current !== null && document.activeElement === textareaRef.current;
+      isTypingFocusedRef.current = stillInField;
+      setIsTypingFocused(stillInField);
+      syncTimerState();
     };
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) pauseTiming();
-      else resumeTiming();
+    const handleWindowBlurOrVisibility = () => {
+      syncTimerState();
     };
 
-    window.addEventListener('blur', pauseTiming);
-    window.addEventListener('focus', resumeTiming);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlurOrVisibility);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowBlurOrVisibility);
 
     return () => {
-      window.removeEventListener('blur', pauseTiming);
-      window.removeEventListener('focus', resumeTiming);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlurOrVisibility);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowBlurOrVisibility);
     };
-  }, [flushActiveQuestionTime, stage, showConfirmModal, questions.length]);
+  }, [syncTimerState]);
 
   useEffect(() => {
-    if (stage !== 'exam' || showConfirmModal || questions.length === 0) {
-      if (!isPausedRef.current) {
-        flushActiveQuestionTime();
-        isPausedRef.current = true;
-      }
-    } else if (!document.hidden) {
-      questionStartRef.current = Date.now();
-      isPausedRef.current = false;
-    }
-  }, [stage, showConfirmModal, questions.length, flushActiveQuestionTime]);
+    syncTimerState();
+  }, [syncTimerState]);
 
   useEffect(() => {
     const timerInterval = setInterval(() => {
-      const accumulatedSeconds = Object.values(timeMapRef.current).reduce(
-        (accumulator, seconds) => accumulator + seconds,
-        0,
-      );
-      const liveDeltaSeconds = isPausedRef.current
-        ? 0
-        : Math.max(0, (Date.now() - questionStartRef.current) / 1000);
-      setDisplayActiveSeconds(accumulatedSeconds + liveDeltaSeconds);
-    }, 1000);
+      if (isPausedRef.current) return;
+      const { totalElapsed, questionElapsed } = computeLiveTotals();
+      setDisplayActiveSeconds(totalElapsed);
+      setDisplayQuestionSeconds(questionElapsed);
+    }, 250);
     return () => clearInterval(timerInterval);
-  }, []);
+  }, [computeLiveTotals]);
 
   useEffect(() => {
     const handleOffline = () => setIsOffline(true);
@@ -343,20 +329,36 @@ export const PaperSession = ({
   }, [persistDraftNow, stage, questions.length]);
 
   const switchQuestion = useCallback(
-    (nextIndex) => {
+    (nextIndex, options = {}) => {
       if (questions.length === 0) return;
       const clampedIndex = Math.max(0, Math.min(questions.length - 1, nextIndex));
       if (clampedIndex === currentIndexRef.current) return;
+
+      const activeQuestionIndex = currentIndexRef.current;
+      const hasTypedAnswer = (latestDraftRef.current.answers[activeQuestionIndex] ?? '').trim().length > 0;
+      const hasConfidence = latestDraftRef.current.confidenceRatings[activeQuestionIndex] != null;
+      if (!options.bypassNudge && hasTypedAnswer && !hasConfidence && confidenceNudgedIndex !== activeQuestionIndex) {
+        setConfidenceNudgedIndex(activeQuestionIndex);
+        setAnnouncement('Reminder: please select a confidence rating from 1 to 5 before moving on.');
+        return;
+      }
+
+      setConfidenceNudgedIndex(null);
       flushActiveQuestionTime();
       currentIndexRef.current = clampedIndex;
       setCurrentIndex(clampedIndex);
-      questionStartRef.current = Date.now();
+      if (!isPausedRef.current) {
+        questionStartRef.current = Date.now();
+      }
+      const { totalElapsed, questionElapsed } = computeLiveTotals();
+      setDisplayActiveSeconds(totalElapsed);
+      setDisplayQuestionSeconds(questionElapsed);
       setAnnouncement(
         `Moved to question ${clampedIndex + 1} of ${questions.length}`,
       );
       persistDraftNow();
     },
-    [flushActiveQuestionTime, persistDraftNow, questions.length],
+    [flushActiveQuestionTime, computeLiveTotals, persistDraftNow, questions.length, confidenceNudgedIndex],
   );
 
   // Keyboard shortcuts Alt+N (next) and Alt+P (previous) keep focus inside the answer box
@@ -385,21 +387,51 @@ export const PaperSession = ({
     () =>
       questions.reduce(
         (accumulator, question) =>
-          accumulator +
-          (question.recommendedTimeSeconds || Math.max(45, (question.marks || 2) * 60)),
+          accumulator + Math.max(1, question.marks || 2) * 60,
         0,
       ),
     [questions],
   );
 
-  const timeProgressPercent = Math.min(
-    100,
-    Math.max(0, (displayActiveSeconds / Math.max(60, totalRecommendedSeconds)) * 100),
-  );
   const answeredCount = Object.values(answers).filter((answerText) => answerText.trim().length > 0).length;
   const currentQuestion = questions[currentIndex];
   const currentAnswer = answers[currentIndex] ?? '';
-  const currentConfidence = confidenceRatings[currentIndex] ?? 3;
+  const currentConfidence = confidenceRatings[currentIndex] ?? null;
+
+  const missingConfidenceIndices = useMemo(
+    () =>
+      questions
+        .map((_, questionIndex) => questionIndex)
+        .filter(
+          (questionIndex) =>
+            (answers[questionIndex] ?? '').trim().length > 0 &&
+            confidenceRatings[questionIndex] == null,
+        ),
+    [questions, answers, confidenceRatings],
+  );
+
+  const currentQuestionMarks = Math.max(1, currentQuestion?.marks || 2);
+  const currentQuestionTargetSeconds = currentQuestionMarks * 60;
+  const currentRemainingSeconds = Math.max(
+    0,
+    currentQuestionTargetSeconds - displayQuestionSeconds,
+  );
+  const currentOvertimeSeconds = Math.max(
+    0,
+    displayQuestionSeconds - currentQuestionTargetSeconds,
+  );
+  const isCurrentQuestionOvertime = displayQuestionSeconds > currentQuestionTargetSeconds;
+
+  const totalRemainingSeconds = Math.max(0, totalRecommendedSeconds - displayActiveSeconds);
+  const paperOvertimeSeconds = Math.max(0, displayActiveSeconds - totalRecommendedSeconds);
+  const isPaperOvertime = displayActiveSeconds > totalRecommendedSeconds;
+
+  const remainingProgressPercent = Math.min(
+    100,
+    Math.max(0, (currentRemainingSeconds / Math.max(1, currentQuestionTargetSeconds)) * 100),
+  );
+  const isTimerRunning =
+    stage === 'exam' && !showConfirmModal && questions.length > 0 && isTypingFocused;
 
   const handleOpenConfirmFinish = () => {
     flushActiveQuestionTime();
@@ -441,9 +473,9 @@ export const PaperSession = ({
       const cleanAnswer = sanitizeAnswerText(answers[questionIndex] ?? '');
       const totalMarks = Math.max(1, question.marks || 2);
       const awardedMarks = Math.max(0, Math.min(totalMarks, reviewMarks[questionIndex] ?? 0));
-      const timeSpentSeconds = Math.max(1, Math.round(timeMapRef.current[questionIndex] ?? 0));
-      const recommendedSeconds = question.recommendedTimeSeconds || totalMarks * 60;
-      const confidence = confidenceRatings[questionIndex] ?? 3;
+      const timeSpentSeconds = Math.max(0, Math.round(timeMapRef.current[questionIndex] ?? 0));
+      const recommendedSeconds = totalMarks * 60;
+      const confidence = confidenceRatings[questionIndex] ?? null;
 
       return {
         questionIndex,
@@ -494,6 +526,7 @@ export const PaperSession = ({
 
     onEndPaper({
       id: resultId,
+      paperId: paper.id || null,
       paperTitle: paper.title,
       scorePercent,
       avgTimeLabel: formatDurationCompact(averageSeconds),
@@ -565,86 +598,69 @@ export const PaperSession = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-4 text-xs sm:text-sm font-medium text-white font-mono tabular-nums shrink-0">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm font-medium text-white font-mono tabular-nums shrink-0">
+              {stage === 'exam' && (
+                <span
+                  aria-label={isTimerRunning ? 'Timer running' : 'Timer paused'}
+                  title={isTimerRunning ? 'Timer running' : 'Timer paused'}
+                  className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                    isTimerRunning
+                      ? 'bg-[#30D158]/20 text-[#6EE7B7] border border-[#30D158]/40'
+                      : 'bg-white/15 text-white/90 border border-white/20'
+                  }`}
+                >
+                  {isTimerRunning ? (
+                    <Play className="w-3 h-3 fill-current" aria-hidden="true" />
+                  ) : (
+                    <Pause className="w-3 h-3 fill-current" aria-hidden="true" />
+                  )}
+                </span>
+              )}
               <span>
-                {answeredCount}/{questions.length} answered
+                {answeredCount}/{questions.length}
               </span>
-              <span>Active: {formatDurationCompact(displayActiveSeconds)}</span>
+              <span className={isCurrentQuestionOvertime ? 'text-[#FCA5A5]' : ''}>
+                Q:{' '}
+                {isCurrentQuestionOvertime
+                  ? `0s (+${formatDurationCompact(currentOvertimeSeconds)})`
+                  : formatDurationCompact(currentRemainingSeconds)}
+              </span>
+              <span className={isPaperOvertime ? 'text-[#FCA5A5]' : 'text-white/85'}>
+                Paper:{' '}
+                {isPaperOvertime
+                  ? `0s (+${formatDurationCompact(paperOvertimeSeconds)})`
+                  : formatDurationCompact(totalRemainingSeconds)}
+              </span>
             </div>
           </div>
 
           <div
             className="w-full h-[3px] bg-white/25 overflow-hidden"
             role="progressbar"
-            aria-label="Exam pacing progress"
+            aria-label="Current question countdown remaining"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={Math.round(timeProgressPercent)}
+            aria-valuenow={Math.round(remainingProgressPercent)}
           >
             <div
-              className="h-full bg-white rounded-r-full transition-[width] duration-700 ease-linear"
-              style={{ width: `${timeProgressPercent}%` }}
+              className={`h-full rounded-r-full transition-[width] duration-300 ease-linear ${
+                isCurrentQuestionOvertime
+                  ? 'bg-[#FF453A]'
+                  : remainingProgressPercent <= 25
+                    ? 'bg-[#FF9F0A]'
+                    : 'bg-white'
+              }`}
+              style={{ width: `${remainingProgressPercent}%` }}
             />
           </div>
         </div>
 
         <div
-          className={`flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b ${
+          className={`flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b ${
             highContrast ? 'border-black' : 'border-black/10'
           }`}
         >
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span
-                className={`text-xs font-semibold whitespace-nowrap ${
-                  highContrast ? 'text-black' : 'text-[#48484A]'
-                }`}
-              >
-                Text Size
-              </span>
-              <button
-                type="button"
-                aria-label="Decrease text size"
-                onClick={() => setFontSizePx((currentSize) => Math.max(14, currentSize - 2))}
-                className={`p-1.5 rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] active:scale-95 transition-all cursor-pointer ${
-                  highContrast
-                    ? 'border-2 border-black text-black bg-white hover:bg-neutral-200'
-                    : 'border-black/15 text-[#1D1D1F] bg-white hover:bg-neutral-100'
-                }`}
-              >
-                <Minus className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <input
-                type="range"
-                min={14}
-                max={24}
-                step={1}
-                value={fontSizePx}
-                onChange={(event) => setFontSizePx(Number(event.target.value))}
-                aria-label="Adjust exam text size from 14px to 24px"
-                className="w-20 accent-[#005BB5] cursor-pointer"
-              />
-              <button
-                type="button"
-                aria-label="Increase text size"
-                onClick={() => setFontSizePx((currentSize) => Math.min(24, currentSize + 2))}
-                className={`p-1.5 rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] active:scale-95 transition-all cursor-pointer ${
-                  highContrast
-                    ? 'border-2 border-black text-black bg-white hover:bg-neutral-200'
-                    : 'border-black/15 text-[#1D1D1F] bg-white hover:bg-neutral-100'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <span
-                className={`text-xs font-mono tabular-nums font-semibold w-9 ${
-                  highContrast ? 'text-black' : 'text-[#1D1D1F]'
-                }`}
-              >
-                {fontSizePx}px
-              </span>
-            </div>
-
+          <div className="flex items-center gap-3">
             {onToggleHighContrast && (
               <button
                 type="button"
@@ -669,7 +685,7 @@ export const PaperSession = ({
             }`}
           >
             <Save className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-            <span>{draftStatus || 'Auto-save ready (5s)'}</span>
+            <span>{draftStatus || 'Auto-save ready'}</span>
           </div>
         </div>
 
@@ -693,37 +709,21 @@ export const PaperSession = ({
         {stage === 'exam' ? (
           <>
             <div className="mb-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-                <p
-                  className={`text-sm font-semibold tracking-tight ${
-                    highContrast ? 'text-black' : 'text-[#48484A]'
-                  }`}
-                >
-                  {currentQuestion.questionNumber
-                    ? `Question ${currentQuestion.questionNumber}`
-                    : `Question ${currentIndex + 1}`}{' '}
-                  <span aria-hidden="true">·</span>{' '}
-                  <span>{currentQuestion.topicCategory}</span>
-                </p>
-
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold font-mono tabular-nums whitespace-nowrap shrink-0 ${
-                    highContrast
-                      ? 'bg-black text-white border border-black'
-                      : 'bg-[#1D1D1F] text-white shadow-xs'
-                  }`}
-                >
-                  {currentQuestion.marks} {currentQuestion.marks === 1 ? 'Mark' : 'Marks'} · Target{' '}
-                  {formatDurationCompact(
-                    currentQuestion.recommendedTimeSeconds || currentQuestion.marks * 60,
-                  )}
-                </span>
-              </div>
+              <p
+                className={`text-sm font-semibold tracking-tight mb-2 ${
+                  highContrast ? 'text-black' : 'text-[#48484A]'
+                }`}
+              >
+                {currentQuestion.questionNumber
+                  ? `Question ${currentQuestion.questionNumber}`
+                  : `Question ${currentIndex + 1}`}{' '}
+                <span aria-hidden="true">·</span>{' '}
+                <span>{currentQuestion.topicCategory}</span>
+              </p>
 
               {currentQuestion.stemContext && (
                 <p
-                  style={{ fontSize: `${Math.max(14, fontSizePx - 1)}px` }}
-                  className={`leading-relaxed mb-3 rounded-2xl px-4 py-3 ${
+                  className={`text-sm sm:text-base leading-relaxed mb-3 rounded-2xl px-4 py-3 ${
                     highContrast
                       ? 'bg-white border-2 border-black text-black'
                       : 'bg-[#F2F4F8] border border-black/8 text-[#1D1D1F]'
@@ -734,12 +734,18 @@ export const PaperSession = ({
               )}
 
               <p
-                style={{ fontSize: `${fontSizePx + 1}px` }}
-                className={`font-bold tracking-tight leading-relaxed ${
+                className={`text-base sm:text-lg font-bold tracking-tight leading-relaxed ${
                   highContrast ? 'text-black' : 'text-[#1D1D1F]'
                 }`}
               >
-                {currentQuestion.prompt}
+                {currentQuestion.prompt}{' '}
+                <span
+                  className={`inline-block font-mono text-sm font-semibold whitespace-nowrap ${
+                    highContrast ? 'text-black' : 'text-[#48484A]'
+                  }`}
+                >
+                  [{currentQuestionMarks} {currentQuestionMarks === 1 ? 'Mark' : 'Marks'}]
+                </span>
               </p>
             </div>
 
@@ -771,27 +777,55 @@ export const PaperSession = ({
 
             <div className="mb-6">
               <div className="flex items-center justify-between gap-2 mb-1.5">
-                <label
-                  htmlFor={`answer-q-${currentIndex}`}
-                  className={`text-xs font-semibold ${
-                    highContrast ? 'text-black' : 'text-[#1D1D1F]'
+                <span
+                  aria-label={isTimerRunning ? 'Timer running' : 'Timer paused'}
+                  title={isTimerRunning ? 'Timer running' : 'Timer paused'}
+                  className={`inline-flex items-center justify-center w-6 h-6 rounded-full border ${
+                    highContrast
+                      ? 'border-black text-black bg-white'
+                      : isTimerRunning
+                        ? 'border-[#15803D]/30 bg-[#15803D]/10 text-[#15803D]'
+                        : 'border-black/12 bg-black/[0.04] text-[#48484A]'
                   }`}
                 >
-                  Your Response
-                </label>
+                  {isTimerRunning ? (
+                    <Play className="w-3 h-3 fill-current" aria-hidden="true" />
+                  ) : (
+                    <Pause className="w-3 h-3 fill-current" aria-hidden="true" />
+                  )}
+                </span>
                 <span
                   className={`text-xs font-mono tabular-nums ${
-                    highContrast ? 'text-black font-semibold' : 'text-[#48484A]'
+                    isCurrentQuestionOvertime
+                      ? highContrast
+                        ? 'text-black font-bold underline'
+                        : 'text-[#B91C1C] font-semibold'
+                      : highContrast
+                        ? 'text-black font-semibold'
+                        : 'text-[#48484A]'
                   }`}
                 >
-                  {currentAnswer.length} chars · Q time:{' '}
-                  {formatDurationCompact(questionTimeMap[currentIndex] ?? 0)}
+                  {isCurrentQuestionOvertime
+                    ? `0s (+${formatDurationCompact(currentOvertimeSeconds)} over)`
+                    : formatDurationCompact(currentRemainingSeconds)}{' '}
+                  / {formatDurationCompact(currentQuestionTargetSeconds)}
                 </span>
               </div>
 
               <textarea
+                ref={textareaRef}
                 id={`answer-q-${currentIndex}`}
                 value={currentAnswer}
+                onFocus={() => {
+                  isTypingFocusedRef.current = true;
+                  setIsTypingFocused(true);
+                  syncTimerState();
+                }}
+                onBlur={() => {
+                  isTypingFocusedRef.current = false;
+                  setIsTypingFocused(false);
+                  syncTimerState();
+                }}
                 onChange={(event) => {
                   const answerValue = event.target.value;
                   setAnswers((prev) => ({
@@ -800,10 +834,9 @@ export const PaperSession = ({
                   }));
                 }}
                 aria-label={`Answer for Question ${currentQuestion.questionNumber || currentIndex + 1}`}
-                placeholder="Type your exam answer here..."
+                placeholder="Type your answer..."
                 rows={7}
-                style={{ fontSize: `${fontSizePx}px` }}
-                className={`w-full rounded-2xl p-5 leading-relaxed outline-none resize-y transition-all ${
+                className={`w-full rounded-2xl p-5 text-base leading-relaxed outline-none resize-y transition-all ${
                   highContrast
                     ? 'bg-white border-2 border-black text-black placeholder:text-neutral-700 focus:ring-2 focus:ring-[#005BB5]'
                     : 'bg-[#F2F4F8] border border-black/12 text-[#1D1D1F] placeholder:text-[#636366] focus:border-[#005BB5] focus:ring-2 focus:ring-[#005BB5]/20 focus:bg-white'
@@ -812,8 +845,14 @@ export const PaperSession = ({
             </div>
 
             <div
-              className={`flex flex-wrap items-center justify-between gap-4 pb-6 mb-6 border-b ${
-                highContrast ? 'border-black' : 'border-black/10'
+              className={`flex flex-wrap items-center justify-between gap-4 pb-6 mb-6 border-b rounded-2xl transition-all ${
+                confidenceNudgedIndex === currentIndex
+                  ? highContrast
+                    ? 'border-2 border-black p-3 bg-neutral-100'
+                    : 'border border-[#F59E0B]/60 bg-[#FEF3C7]/50 p-3'
+                  : highContrast
+                    ? 'border-black'
+                    : 'border-black/10'
               }`}
             >
               <div>
@@ -824,9 +863,28 @@ export const PaperSession = ({
                 >
                   Confidence Rating
                 </span>
-                <span className={`text-xs ${highContrast ? 'text-black' : 'text-[#48484A]'}`}>
-                  1 (Unsure) to 5 (Confident)
-                </span>
+                {confidenceNudgedIndex === currentIndex ? (
+                  <span
+                    role="status"
+                    className={`text-xs font-semibold ${
+                      highContrast ? 'text-black underline' : 'text-[#92400E]'
+                    }`}
+                  >
+                    Quick reminder: pick 1–5 to log your confidence (or press Next again to skip)
+                  </span>
+                ) : currentAnswer.trim().length > 0 && currentConfidence === null ? (
+                  <span
+                    className={`text-xs font-medium ${
+                      highContrast ? 'text-black' : 'text-[#B45309]'
+                    }`}
+                  >
+                    Remember to rate your confidence (1–5)
+                  </span>
+                ) : (
+                  <span className={`text-xs ${highContrast ? 'text-black' : 'text-[#48484A]'}`}>
+                    1 (Unsure) to 5 (Confident)
+                  </span>
+                )}
               </div>
 
               <div
@@ -843,12 +901,13 @@ export const PaperSession = ({
                       role="radio"
                       aria-checked={selected}
                       aria-label={`Confidence ${rating} out of 5`}
-                      onClick={() =>
+                      onClick={() => {
+                        setConfidenceNudgedIndex(null);
                         setConfidenceRatings((prev) => ({
                           ...prev,
                           [currentIndex]: rating,
-                        }))
-                      }
+                        }));
+                      }}
                       className={`w-9 h-9 rounded-xl text-xs font-bold font-mono tabular-nums border transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005BB5] ${
                         selected
                           ? highContrast
@@ -939,8 +998,8 @@ export const PaperSession = ({
               {questions.map((question, questionIndex) => {
                 const maxMarks = Math.max(1, question.marks || 2);
                 const currentAwarded = reviewMarks[questionIndex] ?? 0;
-                const timeSpentSeconds = Math.max(1, Math.round(timeMapRef.current[questionIndex] ?? 0));
-                const recommendedSeconds = question.recommendedTimeSeconds || maxMarks * 60;
+                const timeSpentSeconds = Math.max(0, Math.round(timeMapRef.current[questionIndex] ?? 0));
+                const recommendedSeconds = maxMarks * 60;
                 const cleanAnswer = sanitizeAnswerText(answers[questionIndex] ?? '').trim();
                 const matchedKeywords = rubricMatches[questionIndex]?.matched || [];
                 const missedKeywords = rubricMatches[questionIndex]?.missed || [];
@@ -1093,18 +1152,54 @@ export const PaperSession = ({
               Confirm Finish Paper?
             </h2>
             <p
-              className={`text-sm leading-relaxed mb-5 tabular-nums ${
+              className={`text-sm leading-relaxed mb-4 tabular-nums ${
                 highContrast ? 'text-black' : 'text-[#48484A]'
               }`}
             >
               You have answered <strong>{answeredCount}</strong> of{' '}
-              <strong>{questions.length}</strong> questions in{' '}
-              <strong>{formatDurationCompact(displayActiveSeconds)}</strong> active time.
+              <strong>{questions.length}</strong> questions using{' '}
+              <strong>{formatDurationCompact(displayActiveSeconds)}</strong> of typing time
+              {!isPaperOvertime && (
+                <> ({formatDurationCompact(totalRemainingSeconds)} remaining)</>
+              )}
+              .
               {answeredCount < questions.length && (
                 <> ({questions.length - answeredCount} unanswered)</>
               )}
             </p>
+            {missingConfidenceIndices.length > 0 && (
+              <div
+                className={`mb-5 rounded-xl px-3.5 py-2.5 text-xs font-medium ${
+                  highContrast
+                    ? 'bg-white border-2 border-black text-black'
+                    : 'bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E]'
+                }`}
+              >
+                Reminder: Confidence rating not set for{' '}
+                <strong>
+                  {missingConfidenceIndices
+                    .map((questionIndex) => `Q${questions[questionIndex]?.questionNumber || questionIndex + 1}`)
+                    .join(', ')}
+                </strong>
+                .
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-end gap-3">
+              {missingConfidenceIndices.length > 0 && (
+                <FluidButton
+                  variant="ghost"
+                  size="sm"
+                  highContrast={highContrast}
+                  onClick={() => {
+                    const targetQuestionIndex = missingConfidenceIndices[0];
+                    setShowConfirmModal(false);
+                    setConfidenceNudgedIndex(targetQuestionIndex);
+                    switchQuestion(targetQuestionIndex, { bypassNudge: true });
+                  }}
+                >
+                  Rate Missing
+                </FluidButton>
+              )}
               <FluidButton
                 variant="secondary"
                 size="sm"

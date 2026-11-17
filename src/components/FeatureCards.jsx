@@ -1,12 +1,9 @@
 import React from 'react';
-import { FluidButton } from './ui/fluid-button';
 import { motion } from 'motion/react';
-import { ArrowUpRight } from 'lucide-react';
 
 const FEATURE_CARDS = [
   {
     id: 'pdf-parser',
-    tabId: 'how-it-works',
     kicker: '01 · PDF Extraction',
     title: 'Multi-Column Question Parser',
     description:
@@ -15,7 +12,6 @@ const FEATURE_CARDS = [
   },
   {
     id: 'weakness-engine',
-    tabId: 'weakness-engine',
     kicker: '02 · Pacing & Rubric',
     title: 'Priority Weakness Ranking',
     description:
@@ -24,16 +20,15 @@ const FEATURE_CARDS = [
   },
   {
     id: 'accessibility-tools',
-    tabId: 'accessibility',
     kicker: '03 · Accessible Workspace',
-    title: 'Scaled Type & Draft Safety',
+    title: 'Focus-Gated Timer & Draft Safety',
     description:
-      'Includes 14px–24px live font scaling, High Contrast black-on-white mode, 5-second local draft auto-save, and Alt+N / Alt+P shortcuts.',
+      'Runs the 1-minute-per-mark countdown only while typing, with High Contrast black-on-white mode, 5-second local draft auto-save, and Alt+N / Alt+P shortcuts.',
     tag: 'WCAG-aligned controls',
   },
 ];
 
-export const FeatureCards = ({ onSelectFeature, highContrast = false }) => {
+export const FeatureCards = ({ highContrast = false }) => {
   return (
     <section className="relative py-14 px-6 max-w-6xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -75,7 +70,7 @@ export const FeatureCards = ({ onSelectFeature, highContrast = false }) => {
             </div>
 
             <div
-              className={`mt-8 pt-4 border-t flex items-center justify-between ${
+              className={`mt-8 pt-4 border-t ${
                 highContrast ? 'border-black' : 'border-black/[0.08]'
               }`}
             >
@@ -86,19 +81,6 @@ export const FeatureCards = ({ onSelectFeature, highContrast = false }) => {
               >
                 {card.tag}
               </span>
-              <FluidButton
-                variant="ghost"
-                size="sm"
-                highContrast={highContrast}
-                onClick={() => onSelectFeature?.(card.tabId)}
-                icon={
-                  <ArrowUpRight
-                    className={`w-3.5 h-3.5 ${highContrast ? 'text-black' : 'text-[#1D1D1F]'}`}
-                  />
-                }
-              >
-                Explore
-              </FluidButton>
             </div>
           </motion.div>
         ))}

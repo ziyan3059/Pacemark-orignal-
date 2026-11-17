@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertCircle, CheckCircle2, Clock, Contrast, Download, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Contrast, Download, Loader2, RefreshCw } from 'lucide-react';
 import { FluidButton } from './ui/fluid-button';
 import { ContinuousTabs } from './watermelon/continuous-tabs';
 import { formatDurationCompact } from '../lib/examEngine';
@@ -176,7 +176,7 @@ export const PerformanceReport = ({
       csvLines.push('Question,Topic,Marks Awarded,Total Marks,Time Spent (s),Recommended (s),Confidence (1-5)');
       for (const questionLog of activeResult.questionLogs) {
         csvLines.push(
-          `"Q${questionLog.questionNumber || questionLog.questionIndex + 1}","${questionLog.topicCategory}",${questionLog.marksAwarded},${questionLog.totalMarks},${questionLog.timeSpentSeconds},${questionLog.recommendedTimeSeconds},${questionLog.confidence}`,
+          `"Q${questionLog.questionNumber || questionLog.questionIndex + 1}","${questionLog.topicCategory}",${questionLog.marksAwarded},${questionLog.totalMarks},${questionLog.timeSpentSeconds},${questionLog.recommendedTimeSeconds},${questionLog.confidence ?? 'Unrated'}`,
         );
       }
     }
@@ -220,13 +220,13 @@ export const PerformanceReport = ({
             {activeSubView === 'report' ? 'Performance Analysis Report' : 'Completed Exam History'}
           </h1>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             {onToggleHighContrast && (
               <button
                 type="button"
                 aria-pressed={highContrast}
                 onClick={onToggleHighContrast}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/15 hover:bg-white/25 text-white cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition-colors"
               >
                 <Contrast className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{highContrast ? 'Standard' : 'High Contrast'}</span>
@@ -241,6 +241,28 @@ export const PerformanceReport = ({
               groupId="performance-subtabs"
               className="scale-90 origin-right"
             />
+
+            <motion.button
+              type="button"
+              aria-label="Download PDF Report"
+              title="Download PDF Report"
+              disabled={isExportingPdf || !activeResult}
+              onClick={handleExportPDF}
+              whileHover={activeResult && !isExportingPdf ? { scale: 1.05 } : undefined}
+              whileTap={activeResult && !isExportingPdf ? { scale: 0.94 } : undefined}
+              transition={{ type: 'spring', stiffness: 460, damping: 28 }}
+              className={`w-10 h-10 rounded-full inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1D1D1F] disabled:opacity-40 disabled:cursor-not-allowed ${
+                highContrast
+                  ? 'bg-white text-black border-2 border-white hover:bg-neutral-200'
+                  : 'bg-[#0071E3] text-white hover:bg-[#0077ED] shadow-[0_4px_14px_rgba(0,113,227,0.45),inset_0_1px_0_rgba(255,255,255,0.3)]'
+              }`}
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-[18px] h-[18px] animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="w-[18px] h-[18px]" strokeWidth={2.1} aria-hidden="true" />
+              )}
+            </motion.button>
           </div>
         </div>
 
@@ -265,6 +287,22 @@ export const PerformanceReport = ({
                 Retry Save
               </FluidButton>
             )}
+          </div>
+        )}
+
+        {exportFeedback && (
+          <div
+            role={exportFeedback.type === 'error' ? 'alert' : 'status'}
+            aria-live="polite"
+            className={`mb-6 rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-semibold ${
+              highContrast
+                ? 'bg-white border-2 border-black text-black'
+                : exportFeedback.type === 'error'
+                  ? 'bg-[#FEE2E2] border border-[#FCA5A5] text-[#991B1B]'
+                  : 'bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E3A8A]'
+            }`}
+          >
+            {exportFeedback.message}
           </div>
         )}
 
@@ -534,12 +572,12 @@ export const PerformanceReport = ({
                               highContrast ? 'divide-black' : 'divide-black/[0.06]'
                             }`}
                           >
-                            {activeResult.questionLogs.map((questionLog) => {
+                            {activeResult.questionLogs.map((questionLog, logPosition) => {
                               const isOverTarget =
                                 questionLog.timeSpentSeconds > questionLog.recommendedTimeSeconds;
                               return (
                                 <tr
-                                  key={questionLog.questionIndex}
+                                  key={`${questionLog.questionIndex ?? 'q'}-${logPosition}`}
                                   className={`h-10 transition-colors ${
                                     highContrast ? 'hover:bg-neutral-100' : 'hover:bg-black/[0.03]'
                                   }`}
@@ -583,7 +621,7 @@ export const PerformanceReport = ({
                                       highContrast ? 'text-black' : 'text-[#1D1D1F]'
                                     }`}
                                   >
-                                    {questionLog.confidence}/5
+                                    {questionLog.confidence ? `${questionLog.confidence}/5` : '—'}
                                   </td>
                                 </tr>
                               );
@@ -614,22 +652,6 @@ export const PerformanceReport = ({
                     >
                       Export CSV
                     </FluidButton>
-
-                    {exportFeedback && (
-                      <span
-                        role={exportFeedback.type === 'error' ? 'alert' : 'status'}
-                        aria-live="polite"
-                        className={`text-xs font-semibold ml-2 ${
-                          highContrast
-                            ? 'text-black underline'
-                            : exportFeedback.type === 'error'
-                              ? 'text-[#B91C1C]'
-                              : 'text-[#005BB5]'
-                        }`}
-                      >
-                        {exportFeedback.message}
-                      </span>
-                    )}
                   </div>
                 </>
               )}

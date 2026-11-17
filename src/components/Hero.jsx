@@ -5,26 +5,26 @@ import { ArrowRight } from 'lucide-react';
 
 export const Hero = ({
   onPrimaryAction,
-  onSecondaryAction,
-  signedInUser,
   highContrast = false,
 }) => {
   return (
     <section className="relative pt-16 pb-20 md:pt-24 md:pb-28 px-6 overflow-hidden">
       <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
         <motion.div
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className={`text-xs font-semibold mb-6 tracking-wide uppercase px-3.5 py-1.5 rounded-full ${
+          initial={{ opacity: 0, scale: 0.92, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+          className={`mb-7 w-16 h-16 sm:w-18 sm:h-18 rounded-[20px] p-1 bg-white flex items-center justify-center ${
             highContrast
-              ? 'bg-white text-black border-2 border-black shadow-none'
-              : 'text-[#1D1D1F] bg-white/85 backdrop-blur-xl border border-black/10 shadow-xs'
+              ? 'border-2 border-black'
+              : 'border border-black/10 shadow-[0_12px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.95)]'
           }`}
         >
-          <span>
-            {signedInUser ? `Signed in · ${signedInUser}` : 'PaceMark · Timed Exam Diagnostics'}
-          </span>
+          <img
+            src="/assets/aistudio/p-logo_bc9ef1d9.svg"
+            alt="PaceMark logo"
+            className="w-full h-full object-contain"
+          />
         </motion.div>
 
         <motion.h1
@@ -64,15 +64,6 @@ export const Hero = ({
             onClick={onPrimaryAction}
           >
             Sign In to Practice
-          </FluidButton>
-
-          <FluidButton
-            variant="secondary"
-            size="lg"
-            highContrast={highContrast}
-            onClick={onSecondaryAction}
-          >
-            How It Works
           </FluidButton>
         </motion.div>
       </div>

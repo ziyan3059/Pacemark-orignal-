@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { MeshCanvas } from './components/MeshCanvas';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
@@ -9,15 +9,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { LoggedInDashboard } from './components/LoggedInDashboard';
 import { PaperSession } from './components/PaperSession';
 import { PerformanceReport } from './components/PerformanceReport';
-import { FluidButton } from './components/ui/fluid-button';
 import { apiJson, setStoredAuthToken } from './lib/api';
-
-const LOGGED_OUT_TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'how-it-works', label: 'How It Works' },
-  { id: 'weakness-engine', label: 'Weakness Engine' },
-  { id: 'accessibility', label: 'Accessibility' },
-];
 
 const LOGGED_IN_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -30,42 +22,6 @@ const INITIAL_PAPERS = [
   { id: 'paper-1', title: 'Paper 1: OCR Computer Science (2025)' },
   { id: 'paper-2', title: 'Paper 2: OCR Computational Thinking (2025)' },
 ];
-
-const INFO_TAB_CONTENT = {
-  'how-it-works': {
-    eyebrow: 'How It Works',
-    title: 'Timed Practice Built Around Real Past Papers',
-    description:
-      'Upload a PDF past paper or select a built-in OCR computer science exam. PaceMark isolates multi-column numbered questions, assigns target pacing per mark, records active answer time while ignoring blurred tabs, and walks you through keyword rubric self-marking before generating a PDF diagnostic.',
-    highlights: [
-      'PDF geometry extraction handles numbered questions, sub-parts, and mark totals.',
-      'Active timer tracks per-question duration and pauses automatically if the tab loses focus.',
-      'Self-Mark Review highlights matched syllabus keywords so you can confirm every mark.',
-    ],
-  },
-  'weakness-engine': {
-    eyebrow: 'Weakness Engine',
-    title: 'Priority Weakness Ranking (60% Time · 40% Accuracy)',
-    description:
-      'After every paper, each syllabus topic is scored by combining time overrun relative to target pacing (60%) with lost marks (40%). Topics are ordered from highest weakness index to lowest and classified into Priority Revision, Needs Pacing, or Strong.',
-    highlights: [
-      'Insertion-sorted topic rankings spotlight urgent revision areas first.',
-      'Topic charts compare mark accuracy percentage against target pacing percentage.',
-      'Export any completed session as a formatted PDF report or spreadsheet CSV.',
-    ],
-  },
-  accessibility: {
-    eyebrow: 'Accessibility',
-    title: 'Readable Typography, High Contrast & Draft Safety',
-    description:
-      'Every PaceMark workspace supports live font scaling between 14px and 24px, a pure black-on-white High Contrast toggle, keyboard navigation shortcuts (Alt+N and Alt+P), offline network warnings, and 5-second local draft auto-saving.',
-    highlights: [
-      'Adjustable 14px–24px exam font sizing without breaking page layout.',
-      'High Contrast toggle switches surfaces across the workspace to pure white and black.',
-      'Per-question 1–5 confidence ratings capture exam readiness alongside timing.',
-    ],
-  },
-};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -200,8 +156,6 @@ export default function App() {
       ? activeTab
       : 'dashboard';
 
-  const activeInfoTab = INFO_TAB_CONTENT[activeTab];
-
   return (
     <div
       className={`relative min-h-screen flex flex-col overflow-x-hidden selection:bg-[#0071E3]/20 selection:text-[#1D1D1F] ${
@@ -280,129 +234,23 @@ export default function App() {
         </>
       ) : (
         <>
-          <Navbar
-            tabs={LOGGED_OUT_TABS}
-            activeTab={activeTab}
-            onSelectTab={handleTabSelect}
-            highContrast={highContrast}
-            groupId="logged-out-tabs"
-          />
-
           <main className="relative z-10 flex-1 flex flex-col justify-center">
-            <AnimatePresence mode="wait">
-              {activeTab === 'overview' || !activeInfoTab ? (
-                <motion.div
-                  key="overview"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                >
-                  <Hero
-                    signedInUser={null}
-                    highContrast={highContrast}
-                    onPrimaryAction={handleOpenAuth}
-                    onSecondaryAction={() => handleTabSelect('how-it-works')}
-                  />
-                  <FeatureCards
-                    highContrast={highContrast}
-                    onSelectFeature={(tabId) => handleTabSelect(tabId)}
-                  />
-                </motion.div>
-              ) : (
-                <motion.section
-                  key={activeTab}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  className="py-20 px-6 max-w-3xl mx-auto text-center flex flex-col items-center"
-                >
-                  <div
-                    className={`w-full rounded-[32px] p-10 sm:p-14 ${
-                      highContrast
-                        ? 'bg-white border-2 border-black text-black shadow-none'
-                        : 'bg-white/88 backdrop-blur-2xl border border-black/10 text-[#1D1D1F] shadow-[0_20px_50px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.95)]'
-                    }`}
-                  >
-                    <span
-                      className={`text-[11px] font-semibold uppercase tracking-[0.08em] block mb-3 ${
-                        highContrast ? 'text-black' : 'text-[#48484A]'
-                      }`}
-                    >
-                      {activeInfoTab.eyebrow}
-                    </span>
-                    <h2
-                      className={`text-3xl sm:text-4xl font-bold tracking-[-0.03em] mb-4 ${
-                        highContrast ? 'text-black' : 'text-[#1D1D1F]'
-                      }`}
-                    >
-                      {activeInfoTab.title}
-                    </h2>
-                    <p
-                      className={`text-base leading-relaxed max-w-xl mx-auto mb-6 ${
-                        highContrast ? 'text-black' : 'text-[#3A3A3C]'
-                      }`}
-                    >
-                      {activeInfoTab.description}
-                    </p>
-                    <ul
-                      className={`text-left max-w-lg mx-auto space-y-2 mb-8 text-sm ${
-                        highContrast ? 'text-black' : 'text-[#1D1D1F]'
-                      }`}
-                    >
-                      {activeInfoTab.highlights.map((highlight) => (
-                        <li
-                          key={highlight}
-                          className={`rounded-xl px-4 py-2.5 ${
-                            highContrast
-                              ? 'bg-white border border-black font-medium'
-                              : 'bg-[#F2F4F8] border border-black/8'
-                          }`}
-                        >
-                          {highlight}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="flex flex-wrap items-center justify-center gap-3">
-                      {activeTab === 'accessibility' && (
-                        <FluidButton
-                          variant="secondary"
-                          size="md"
-                          highContrast={highContrast}
-                          onClick={() => setHighContrast((prev) => !prev)}
-                        >
-                          {highContrast ? 'Disable High Contrast' : 'Test High Contrast Mode'}
-                        </FluidButton>
-                      )}
-                      <FluidButton
-                        variant="primary"
-                        size="md"
-                        highContrast={highContrast}
-                        onClick={handleOpenAuth}
-                      >
-                        Sign In to Practice
-                      </FluidButton>
-                      <FluidButton
-                        variant="ghost"
-                        size="md"
-                        highContrast={highContrast}
-                        onClick={() => handleTabSelect('overview')}
-                      >
-                        Back to Overview
-                      </FluidButton>
-                    </div>
-                  </div>
-                </motion.section>
-              )}
-            </AnimatePresence>
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            >
+              <Hero
+                highContrast={highContrast}
+                onPrimaryAction={handleOpenAuth}
+              />
+              <FeatureCards highContrast={highContrast} />
+            </motion.div>
           </main>
 
           <div className="relative z-10">
-            <Footer
-              highContrast={highContrast}
-              onNavigateTab={(tabId) => handleTabSelect(tabId)}
-            />
+            <Footer highContrast={highContrast} />
           </div>
         </>
       )}

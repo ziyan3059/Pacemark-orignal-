@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const Footer = ({ highContrast = false, onNavigateTab }) => {
+export const Footer = ({ highContrast = false }) => {
   return (
     <footer
       className={`py-8 px-6 text-xs ${
@@ -11,41 +11,18 @@ export const Footer = ({ highContrast = false, onNavigateTab }) => {
     >
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
         <div
-          className={`font-semibold tracking-tight whitespace-nowrap shrink-0 ${
+          className={`inline-flex items-center gap-2 font-semibold tracking-tight whitespace-nowrap shrink-0 ${
             highContrast ? 'text-black' : 'text-[#1D1D1F]'
           }`}
         >
-          PaceMark
-        </div>
-
-        <div className="flex items-center gap-6 font-medium">
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('how-it-works')}
-            className={`transition-colors cursor-pointer whitespace-nowrap shrink-0 hover:underline ${
-              highContrast ? 'text-black' : 'text-[#48484A] hover:text-[#1D1D1F]'
+          <img
+            src="/assets/aistudio/p-logo_bc9ef1d9.svg"
+            alt="PaceMark logo"
+            className={`w-6 h-6 rounded-md object-contain bg-white shrink-0 ${
+              highContrast ? 'border border-black' : 'border border-black/10'
             }`}
-          >
-            Exam Engine
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('weakness-engine')}
-            className={`transition-colors cursor-pointer whitespace-nowrap shrink-0 hover:underline ${
-              highContrast ? 'text-black' : 'text-[#48484A] hover:text-[#1D1D1F]'
-            }`}
-          >
-            Weakness Ranking
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('accessibility')}
-            className={`transition-colors cursor-pointer whitespace-nowrap shrink-0 hover:underline ${
-              highContrast ? 'text-black' : 'text-[#48484A] hover:text-[#1D1D1F]'
-            }`}
-          >
-            Accessibility
-          </button>
+          />
+          <span>PaceMark</span>
         </div>
 
         <div

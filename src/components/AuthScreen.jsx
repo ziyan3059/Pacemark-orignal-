@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, AlertCircle, CheckCircle2, Circle, Info } from 'lucide-react';
 import { FluidButton } from './ui/fluid-button';
@@ -19,6 +19,15 @@ export const AuthScreen = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [infoNotice, setInfoNotice] = useState('');
   const [submittedMessage, setSubmittedMessage] = useState('');
+  const redirectTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const passwordValidation = validateStudentPassword(password);
   const passwordRules = [
@@ -75,7 +84,7 @@ export const AuthScreen = ({
         }
 
         setSubmittedMessage(`Student account created for ${authResponse.user?.username}.`);
-        setTimeout(() => {
+        redirectTimerRef.current = setTimeout(() => {
           onLoginSuccess?.(authResponse);
         }, 250);
       } catch (registerError) {
@@ -150,7 +159,7 @@ export const AuthScreen = ({
       }
 
       setSubmittedMessage(`Signed in as ${authResponse.user?.username}.`);
-      setTimeout(() => {
+      redirectTimerRef.current = setTimeout(() => {
         onLoginSuccess?.(authResponse);
       }, 250);
     } catch (loginError) {
@@ -216,20 +225,13 @@ export const AuthScreen = ({
                   : 'bg-black/[0.04] border border-black/10'
               }`}
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-                className={highContrast ? 'text-black shrink-0' : 'text-[#1D1D1F] shrink-0'}
-              >
-                <rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" />
-                <rect x="13" y="3" width="8" height="8" rx="4" fill="#0071E3" />
-                <rect x="3" y="13" width="8" height="8" rx="4" fill="#FF9500" />
-                <rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" fillOpacity="0.3" />
-              </svg>
+              <img
+                src="/assets/aistudio/p-logo_bc9ef1d9.svg"
+                alt="PaceMark logo"
+                className={`w-7 h-7 rounded-lg object-contain bg-white shrink-0 ${
+                  highContrast ? 'border border-black' : 'border border-black/10'
+                }`}
+              />
               <span
                 className={`text-sm font-bold tracking-tight whitespace-nowrap shrink-0 ${
                   highContrast ? 'text-black' : 'text-[#1D1D1F]'
@@ -317,7 +319,7 @@ export const AuthScreen = ({
                         highContrast ? 'text-black' : 'text-[#3A3A3C]'
                       }`}
                     >
-                      Password:
+                      Password
                     </span>
                     <input
                       type="password"
@@ -437,7 +439,7 @@ export const AuthScreen = ({
                         highContrast ? 'text-black' : 'text-[#3A3A3C]'
                       }`}
                     >
-                      Password:
+                      Password
                     </span>
                     <input
                       type="password"

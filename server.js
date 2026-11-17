@@ -289,40 +289,45 @@ async function startServer() {
 
   app.post('/api/results', requireAuth, (request, response) => {
     const user = request.currentUser;
-    const body = request.body && typeof request.body === 'object' ? request.body : {};
-    const paperTitle = typeof body.paperTitle === 'string' ? body.paperTitle.trim() : '';
+    const requestBody = request.body && typeof request.body === 'object' ? request.body : {};
+    const paperTitle = typeof requestBody.paperTitle === 'string' ? requestBody.paperTitle.trim() : '';
 
     if (
       !paperTitle ||
-      typeof body.scorePercent !== 'number' ||
-      !Number.isFinite(body.scorePercent)
+      typeof requestBody.scorePercent !== 'number' ||
+      !Number.isFinite(requestBody.scorePercent)
     ) {
       response.status(400).json({ error: 'Invalid exam result payload.' });
       return;
     }
 
-    const topicBreakdown = Array.isArray(body.topicBreakdown) ? body.topicBreakdown : [];
-    const questionLogs = Array.isArray(body.questionLogs) ? body.questionLogs : [];
+    const topicBreakdown = Array.isArray(requestBody.topicBreakdown) ? requestBody.topicBreakdown : [];
+    const questionLogs = Array.isArray(requestBody.questionLogs) ? requestBody.questionLogs : [];
     const totalQuestions = Math.max(
       0,
-      Math.round(Number(body.totalQuestions ?? questionLogs.length)),
+      Math.round(Number(requestBody.totalQuestions ?? questionLogs.length)),
     );
     const questionsAnswered = Math.max(
       0,
-      Math.min(totalQuestions, Math.round(Number(body.questionsAnswered ?? 0))),
+      Math.min(totalQuestions, Math.round(Number(requestBody.questionsAnswered ?? 0))),
     );
+    const completedAt =
+      typeof requestBody.completedAt === 'string' && !Number.isNaN(Date.parse(requestBody.completedAt))
+        ? new Date(requestBody.completedAt).toISOString()
+        : new Date().toISOString();
 
     const savedResult = saveUserExamResult(user.id, {
-      id: typeof body.id === 'string' ? body.id : '',
+      id: typeof requestBody.id === 'string' ? requestBody.id : '',
+      paperId: typeof requestBody.paperId === 'string' ? requestBody.paperId.trim() : '',
       paperTitle: paperTitle.slice(0, 200),
-      scorePercent: Math.max(0, Math.min(100, Math.round(body.scorePercent))),
-      avgTimeLabel: typeof body.avgTimeLabel === 'string' ? body.avgTimeLabel.slice(0, 40) : '0s',
+      scorePercent: Math.max(0, Math.min(100, Math.round(requestBody.scorePercent))),
+      avgTimeLabel: typeof requestBody.avgTimeLabel === 'string' ? requestBody.avgTimeLabel.slice(0, 40) : '0s',
       questionsAnswered,
       totalQuestions,
-      summary: typeof body.summary === 'string' ? body.summary.slice(0, 500) : '',
+      summary: typeof requestBody.summary === 'string' ? requestBody.summary.slice(0, 500) : '',
       topicBreakdown,
       questionLogs,
-      completedAt: typeof body.completedAt === 'string' ? body.completedAt : new Date().toISOString(),
+      completedAt,
     });
 
     response.status(201).json({ result: savedResult });
@@ -331,12 +336,12 @@ async function startServer() {
   app.post('/api/reports/pdf', async (request, response) => {
     try {
       const user = resolveSessionUser(request);
-      const body = request.body && typeof request.body === 'object' ? request.body : {};
+      const requestBody = request.body && typeof request.body === 'object' ? request.body : {};
       const payload = {
-        ...body,
+        ...requestBody,
         username:
-          typeof body.username === 'string' && body.username.trim()
-            ? body.username.trim()
+          typeof requestBody.username === 'string' && requestBody.username.trim()
+            ? requestBody.username.trim()
             : user?.username || 'Student',
       };
       const pdfBuffer = await buildReportPdfWithPdfLib(payload);
@@ -355,7 +360,7 @@ async function startServer() {
     '/api/papers/analyze',
     upload.single('file'),
     async (request, response) => {
-      if (!request.file) {
+      if (!request.file || request.file.size === 0) {
         response.status(400).json({ error: 'No PDF file was uploaded.' });
         return;
       }

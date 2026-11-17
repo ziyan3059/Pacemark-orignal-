@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  Add01Icon,
-  Cancel01Icon,
-  FileUploadIcon,
-  TaskEdit01Icon,
-  NoteIcon,
-} from '@hugeicons/core-free-icons';
+import { Add01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { motion, AnimatePresence } from 'motion/react';
 
 const GridActionItem = ({ icon, label, onClick, disabled, highContrast = false }) => {
@@ -52,23 +46,7 @@ export const CreateNewDisclosure = ({
   className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(initialOpen);
-
-  const defaultItems = [
-    {
-      icon: <HugeiconsIcon icon={FileUploadIcon} strokeWidth={1.6} />,
-      label: 'Upload PDF',
-    },
-    {
-      icon: <HugeiconsIcon icon={TaskEdit01Icon} strokeWidth={1.6} />,
-      label: 'Timed Mock',
-    },
-    {
-      icon: <HugeiconsIcon icon={NoteIcon} strokeWidth={1.6} />,
-      label: 'Preview Text',
-    },
-  ];
-
-  const disclosureItems = items || defaultItems;
+  const disclosureItems = Array.isArray(items) ? items : [];
   const gridColumnsClass =
     disclosureItems.length === 1
       ? 'grid-cols-1'
